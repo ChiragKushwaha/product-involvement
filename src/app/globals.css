@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+/*
+  Design system derived from /public/design.
+
+  The reference sheets carry both a dark charcoal treatment and a pale
+  sage-bone treatment, so both are first-class themes here. Periwinkle is the
+  primary action colour; the warm orange from the reference is demoted to one
+  of eight soft card accents so it never dominates a screen.
+
+  `@theme inline` is deliberate: it makes utilities reference the custom
+  properties rather than copying their values, which is what lets one class
+  restyle itself when the theme flips.
+*/
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-well: var(--well);
+  --color-line: var(--line);
+
+  --color-content: var(--content);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--on-primary);
+
+  /* Eight card accents — soft in both themes */
+  --color-peri: var(--a-peri);
+  --color-sky: var(--a-sky);
+  --color-sage: var(--a-sage);
+  --color-butter: var(--a-butter);
+  --color-lilac: var(--a-lilac);
+  --color-mint: var(--a-mint);
+  --color-blush: var(--a-blush);
+  --color-slate: var(--a-slate);
+
+  --font-display: var(--font-archivo), "Arial Black", sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+
+  --radius-card: 26px;
+  --radius-tile: 20px;
+}
+
+/* ------------------------------------------------------------- light */
+:root {
+  --surface: #eceee8;
+  --card: #ffffff;
+  --well: #f3f5ef;
+  --line: rgb(20 24 20 / 0.1);
+
+  --content: #16181a;
+  --muted: rgb(22 24 26 / 0.62);
+  --faint: rgb(22 24 26 / 0.61);
+
+  --primary: #5951d8;
+  --primary-soft: rgb(89 81 216 / 0.12);
+  --on-primary: #ffffff;
+
+  --a-peri: #5951d8;
+  --a-sky: #8fd0e0;
+  --a-sage: #b9cbb9;
+  --a-butter: #edc158;
+  --a-lilac: #b8a9ec;
+  --a-mint: #93d6b4;
+  --a-blush: #e9a9bd;
+  --a-slate: #93a9c0;
+
+  color-scheme: light;
+}
+
+/* -------------------------------------------------------------- dark */
+:root[data-theme='dark'] {
+  --surface: #131313;
+  --card: #1c1c1c;
+  --well: #242424;
+  --line: rgb(255 255 255 / 0.1);
+
+  --content: #f4f3ee;
+  --muted: rgb(244 243 238 / 0.65);
+  --faint: rgb(244 243 238 / 0.49);
+
+  --primary: #8f88f9;
+  --primary-soft: rgb(143 136 249 / 0.18);
+  --on-primary: #ffffff;
+
+  --a-peri: #5c53e0;
+  --a-sky: #a9ddea;
+  --a-sage: #cbd8cb;
+  --a-butter: #f2c44e;
+  --a-lilac: #c3b5f0;
+  --a-mint: #a9e0c4;
+  --a-blush: #efb8c8;
+  --a-slate: #9fb3c8;
+
+  color-scheme: dark;
+}
+
+/* Follow the OS until the participant picks a theme explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface: #131313;
+    --card: #1c1c1c;
+    --well: #242424;
+    --line: rgb(255 255 255 / 0.1);
+
+    --content: #f4f3ee;
+    --muted: rgb(244 243 238 / 0.65);
+    --faint: rgb(244 243 238 / 0.49);
+
+    --primary: #8f88f9;
+    --primary-soft: rgb(143 136 249 / 0.18);
+    --on-primary: #ffffff;
+
+    --a-peri: #5c53e0;
+    --a-sky: #a9ddea;
+    --a-sage: #cbd8cb;
+    --a-butter: #f2c44e;
+    --a-lilac: #c3b5f0;
+    --a-mint: #a9e0c4;
+    --a-blush: #efb8c8;
+    --a-slate: #9fb3c8;
+
+    color-scheme: dark;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--content);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Heavy uppercase display headings, as in the reference screens */
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+
+.circle-btn {
+  @apply inline-flex shrink-0 items-center justify-center rounded-full bg-card text-content transition active:scale-95;
+  width: 44px;
+  height: 44px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+.card {
+  border-radius: var(--radius-card);
+}
+
+button,
+[role='button'],
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+/* Visible keyboard focus everywhere (WCAG 2.4.7 / 2.4.11) */
+:where(a, button, input, select, textarea, [role='button'], [role='radio'], [tabindex]):focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Skip link — first tab stop, visible only when focused */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.no-bar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-bar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
