@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   let stored: { ok: boolean; reason?: string };
   try {
-    saveSession(session);
+    await saveSession(session);
     stored = { ok: true };
   } catch (err) {
     stored = { ok: false, reason: err instanceof Error ? err.message : 'db write failed' };
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: 'Unauthorised' }, { status: 401 });
   }
   try {
-    const sessions = listSessions();
+    const sessions = await listSessions();
     return Response.json({ ok: true, count: sessions.length, sessions });
   } catch (err) {
     return Response.json(

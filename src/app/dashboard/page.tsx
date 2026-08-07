@@ -34,7 +34,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/dashbo
 
   let data;
   try {
-    data = aggregates();
+    data = await aggregates();
   } catch {
     data = {
       total: 0,

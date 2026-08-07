@@ -108,8 +108,9 @@ source open/close, scroll and external visit.
 ## Storing responses in Google Drive
 
 Every submission is written to `localStorage` first, so a network failure can never
-lose a response. It is then POSTed to `/api/responses`, which writes it into
-`data/survey.db` and forwards to Drive if configured.
+lose a response. It is then POSTed to `/api/responses`, which writes to the local
+`data/survey.db` during development or the connected Turso database in production,
+and forwards to Drive if configured.
 
 To write into the study's Drive folder:
 
@@ -123,13 +124,15 @@ To write into the study's Drive folder:
 SURVEY_WEBHOOK_URL=https://script.google.com/macros/s/…/exec
 SURVEY_WEBHOOK_TOKEN=<the same secret>
 ADMIN_TOKEN=<required in production to read GET /api/responses>
+TURSO_DATABASE_URL=libsql://…
+TURSO_AUTH_TOKEN=…
 ```
 
 Each submission then appends a row to a **Survey Responses** sheet in that folder and
 drops the raw JSON into a `raw-json` subfolder.
 
-Without this configured the app still works — responses stay on the device and on the
-server, and the dashboard exports them.
+Without the optional Drive webhook the app still works — responses stay on the device
+and in SQLite/Turso, and the dashboard exports them.
 
 ### Exports
 

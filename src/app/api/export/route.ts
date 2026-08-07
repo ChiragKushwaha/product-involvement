@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
   const format = new URL(request.url).searchParams.get('format') ?? 'responses';
   const stamp = new Date().toISOString().slice(0, 10);
-  const sessions = listSessions();
+  const sessions = await listSessions();
 
   if (format === 'json') {
     return new Response(JSON.stringify(sessions, null, 2), {
