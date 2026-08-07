@@ -437,6 +437,63 @@ body.gsc-overflow-hidden:not(:has(.google-inline-results)) {
   background: var(--card) !important;
 }
 
+/* Google's thumbnail results use percentage-based table-cell sizing. Once the
+   overlay becomes an inline surface, those percentages can resolve against the
+   viewport and leave a result card hundreds of pixels tall. This compact grid
+   makes every row size itself from its content. */
+.google-inline-results :where(
+  .gsc-webResult.gsc-result,
+  .gs-webResult.gs-result,
+  .gsc-thumbnail-inside,
+  .gsc-url-top,
+  .gsc-table-result,
+  .gsc-table-cell-snippet-close,
+  .gs-snippet
+) {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.google-inline-results .gs-webResult.gs-result:has(> .gsc-thumbnail) {
+  display: grid !important;
+  grid-template-columns: 92px minmax(0, 1fr) !important;
+  grid-auto-rows: max-content !important;
+  column-gap: 0.875rem !important;
+  align-items: start !important;
+}
+
+.google-inline-results .gs-webResult.gs-result:has(> .gsc-thumbnail) > .gsc-thumbnail {
+  grid-column: 1 !important;
+  grid-row: 1 / span 3 !important;
+  float: none !important;
+  margin: 0 !important;
+}
+
+.google-inline-results .gs-webResult.gs-result:has(> .gsc-thumbnail) > :where(
+  .gsc-thumbnail-inside,
+  .gsc-url-top,
+  .gsc-table-result
+) {
+  grid-column: 2 !important;
+  margin: 0 !important;
+}
+
+.google-inline-results :where(.gs-image-box, img.gs-image) {
+  height: auto !important;
+  max-height: 92px !important;
+  object-fit: contain !important;
+}
+
+@media (max-width: 480px) {
+  .google-inline-results .gs-webResult.gs-result:has(> .gsc-thumbnail) {
+    grid-template-columns: 72px minmax(0, 1fr) !important;
+  }
+
+  .google-inline-results :where(.gs-image-box, img.gs-image) {
+    max-height: 72px !important;
+  }
+}
+
 .google-inline-results :where(.gsc-thumbnail-inside, .gsc-url-top, .gsc-table-result) {
   padding-right: 0 !important;
   padding-left: 0 !important;
