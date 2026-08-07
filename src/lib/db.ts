@@ -281,8 +281,8 @@ export interface Aggregates {
 export function aggregates(): Aggregates {
   const d = connect();
   // node:sqlite returns null-prototype rows, which cannot be handed to a
-  // Client Component — copy them into plain objects first.
-  const q = <T>(sql: string) => d.prepare(sql).all().map((r) => ({ ...(r as object) })) as T[];
+  // Client Component — JSON round-trip fully strips null prototypes.
+  const q = <T>(sql: string) => JSON.parse(JSON.stringify(d.prepare(sql).all())) as T[];
 
   return {
     total: countSessions(),

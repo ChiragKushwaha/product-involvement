@@ -45,4 +45,4 @@ next-env.d.ts
 
 # Ad videos are large binaries; keep them out of git and deploy them alongside
 # (or track with Git LFS). Remove this line if you want them committed.
-/public/ads/*.mp4
+# /public/ads/*.mp4

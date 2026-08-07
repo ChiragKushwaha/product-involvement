@@ -27,18 +27,18 @@ export function SituationGrid({
 
       <div className="flex items-start gap-3 pt-2 pb-5">
         <div className="min-w-0 flex-1">
-        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">
-          Step 2 of 6
-        </p>
-        <h1 className="display text-[28px] leading-[0.92] md:text-[34px]">
-          Select any one
-          <br />
-          advertisement
-        </h1>
-        <p className="mt-2.5 text-[13px] leading-relaxed text-muted">
-          Choose a single advertisement to continue. Please do not go back and forth between
-          them — viewing more than one affects the study data.
-        </p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">
+            Step 2 of 6
+          </p>
+          <h1 className="display text-[28px] leading-[0.92] md:text-[34px]">
+            Select any one
+            <br />
+            advertisement
+          </h1>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-muted">
+            Choose a single advertisement to continue. Please do not go back and forth between
+            them — viewing more than one affects the study data.
+          </p>
         </div>
         <ThemeToggle />
       </div>
@@ -50,12 +50,12 @@ export function SituationGrid({
             onClick={() => onSelect(s)}
             aria-label={`Advertisement ${s.number}: ${s.category}`}
             className={cx(
-              'card flex aspect-[4/3] flex-col items-center justify-center gap-1.5 p-3 text-center transition active:scale-[0.97]',
+              'card flex aspect-[4/3] flex-col items-center justify-center gap-1.5 p-3 text-center [container-type:inline-size] transition active:scale-[0.97]',
               ACCENT_BG[s.accent],
               ACCENT_ON[s.accent],
             )}
           >
-            <span className="display text-[20px] leading-[0.95] sm:text-[24px]">
+            <span className="display max-w-full text-[clamp(18px,15cqw,24px)] leading-[0.95]">
               {s.category}
             </span>
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">
