@@ -327,13 +327,5 @@ export const SITUATIONS: Situation[] = [
 
 export const SITUATION_BY_ID = new Map(SITUATIONS.map((s) => [s.id, s]));
 
-/** Seed query the search box opens with, per category. */
-export const SEED_QUERY: Record<CategoryCode, string> = {
-  L: 'best laptop under 80000',
-  F: 'trekking shoes for mountain trip',
-  H: 'online certification course',
-  D: 'cold drinks delivery',
-};
-
 export const SOURCE_SITE =
   'https://sites.google.com/view/research-on-search/multiple-situations';

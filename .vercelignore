@@ -1,0 +1,9 @@
+# Never deploy local development responses or SQLite journal files.
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Local-only configuration and build artifacts.
+.env*
+.next/

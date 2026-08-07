@@ -168,6 +168,326 @@ textarea {
   touch-action: manipulation;
 }
 
+/* A consistent, soft interaction curve across the survey UI. */
+:where(button, [role='button'], a) {
+  transition-duration: 260ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes channel-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.channel-enter {
+  animation: channel-enter 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-reveal {
+  transform-origin: top;
+  animation: ui-reveal 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ------------------------------------------------ Google Programmable Search
+   The selected engine uses Google's overlay layout. Its stock fixed pixel
+   modal is too narrow on phones, so make the generated result surface a true
+   viewport-level sheet. `!important` is required to beat Google's inline
+   positioning styles. */
+.gsc-modal-background-image,
+.gsc-modal-background-image-visible {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9998 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  background: var(--surface) !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+
+.gsc-results-wrapper-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  box-sizing: border-box !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100dvh !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: max(3.75rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+}
+
+.gsc-results-wrapper-overlay .gsc-results-close-btn {
+  position: fixed !important;
+  top: max(0.75rem, env(safe-area-inset-top)) !important;
+  right: 1rem !important;
+  z-index: 10001 !important;
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 999px !important;
+  background-color: var(--card) !important;
+  background-position: center !important;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.12) !important;
+}
+
+.gsc-results-wrapper-overlay :where(
+  .gsc-wrapper,
+  .gsc-resultsbox-visible,
+  .gsc-resultsRoot,
+  .gsc-results,
+  .gsc-expansionArea,
+  .gsc-webResult,
+  .gsc-result,
+  .gsc-table-result
+) {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.gsc-results-wrapper-overlay :where(.gsc-thumbnail-inside, .gsc-url-top, .gsc-table-result) {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+.gsc-results-wrapper-overlay :where(.gsc-webResult.gsc-result, .gsc-result) {
+  border-color: var(--line) !important;
+  background: var(--card) !important;
+  opacity: 1 !important;
+}
+
+.gsc-results-wrapper-overlay :where(.gs-title, .gs-title *) {
+  color: var(--primary) !important;
+  opacity: 1 !important;
+}
+
+.gsc-results-wrapper-overlay :where(.gs-visibleUrl, .gs-visibleUrl *) {
+  color: #217346 !important;
+  opacity: 1 !important;
+}
+
+.gsc-results-wrapper-overlay :where(.gs-snippet, .gs-snippet *, .gsc-result-info) {
+  color: var(--content) !important;
+  opacity: 1 !important;
+}
+
+.gsc-results-wrapper-overlay .gsc-cursor-box {
+  margin: 1.5rem 0 !important;
+  text-align: center !important;
+}
+
+@media (min-width: 768px) {
+  .gsc-results-wrapper-overlay {
+    padding-right: max(2rem, calc((100vw - 72rem) / 2)) !important;
+    padding-left: max(2rem, calc((100vw - 72rem) / 2)) !important;
+  }
+}
+
+/* Inline two-part Google layout: sticky search box, flowing results below. */
+.google-inline-results .gsc-results-wrapper-overlay {
+  position: static !important;
+  inset: auto !important;
+  z-index: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.google-inline-results :where(.gsc-modal-background-image, .gsc-modal-background-image-visible, .gsc-results-close-btn) {
+  display: none !important;
+}
+
+.google-inline-results :where(.gsc-results-wrapper-visible, .gsc-resultsbox-visible) {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+body:has(.google-inline-results .gsc-results-wrapper-visible) > :where(
+  .gsc-modal-background-image,
+  .gsc-modal-background-image-visible
+) {
+  display: none !important;
+}
+
+body.gsc-overflow-hidden:has(.google-inline-results .gsc-results-wrapper-visible) {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+/* Google can leave this global modal class behind after its screen unmounts. */
+body.gsc-overflow-hidden:not(:has(.google-inline-results)) {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.google-inline-results :where(
+  .gsc-control-cse,
+  .gsc-control-wrapper-cse,
+  .gsc-results,
+  .gsc-resultsRoot,
+  .gsc-expansionArea,
+  .gsc-webResult,
+  .gsc-result,
+  .gsc-table-result
+) {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.google-inline-results :where(table, tbody, tr, td, .gsc-table-cell-thumbnail, .gsc-table-cell-snippet-close) {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.google-inline-results table {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+.google-inline-results :where(.gsc-table-cell-thumbnail, .gsc-thumbnail) {
+  width: 92px !important;
+}
+
+.google-inline-results .gsc-table-cell-snippet-close {
+  width: auto !important;
+}
+
+.google-inline-results :where(.gs-title, .gs-visibleUrl, .gs-snippet) {
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+.google-inline-results :where(img, iframe) {
+  max-width: 100% !important;
+}
+
+.google-inline-results,
+.google-inline-results > div {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: clip !important;
+}
+
+.google-inline-results * {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+}
+
+.google-inline-results .gsc-cursor {
+  display: flex !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 480px) {
+  .google-inline-results :where(.gsc-table-cell-thumbnail, .gsc-thumbnail) {
+    width: 72px !important;
+  }
+}
+
+.google-inline-results .gsc-control-cse {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.google-inline-results .gsc-webResult.gsc-result {
+  margin-bottom: 0.625rem !important;
+  padding: 1rem !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 20px !important;
+  background: var(--card) !important;
+}
+
+.google-inline-results :where(.gsc-thumbnail-inside, .gsc-url-top, .gsc-table-result) {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+.google-inline-results :where(.gs-title, .gs-title *) {
+  color: var(--primary) !important;
+}
+
+.google-inline-results :where(.gs-visibleUrl, .gs-visibleUrl *) {
+  color: #217346 !important;
+}
+
+.google-inline-results :where(.gs-snippet, .gs-snippet *, .gsc-result-info) {
+  color: var(--content) !important;
+}
+
+.google-inline-results .gsc-cursor-box {
+  display: block !important;
+  visibility: visible !important;
+  width: 100% !important;
+  margin: 1.5rem 0 !important;
+  overflow: visible !important;
+  text-align: center !important;
+}
+
+.google-inline-results .gsc-cursor-page {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  margin: 0.2rem !important;
+  padding: 0 0.5rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--card) !important;
+  color: var(--primary) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  text-decoration: none !important;
+  cursor: pointer !important;
+}
+
+.google-inline-results .gsc-cursor-current-page {
+  background: var(--primary) !important;
+  color: var(--on-primary) !important;
+}
+
 /* Visible keyboard focus everywhere (WCAG 2.4.7 / 2.4.11) */
 :where(a, button, input, select, textarea, [role='button'], [role='radio'], [tabindex]):focus-visible {
   outline: 3px solid var(--primary);

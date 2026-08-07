@@ -84,7 +84,14 @@ export function csvHeaders(): string[] {
     METRIC_SUFFIXES.map((suffix) => `${prefix}_${suffix}`),
   );
 
-  return [...base, ...metrics, 'queries_submitted', 'ai_prompts_submitted', 'sources_visited'];
+  return [
+    ...base,
+    ...metrics,
+    'queries_submitted',
+    'ai_prompts_submitted',
+    'sources_visited',
+    'event_log_json',
+  ];
 }
 
 export function csvRow(s: CompleteSurveySession): (string | number)[] {
@@ -131,6 +138,7 @@ export function csvRow(s: CompleteSurveySession): (string | number)[] {
     s.telemetry.queriesSubmitted.join(' | '),
     s.telemetry.promptsSubmitted.join(' | '),
     s.telemetry.visitedSources.join(' | '),
+    JSON.stringify(s.telemetry.eventLogs),
   ];
 }
 

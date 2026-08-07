@@ -729,34 +729,6 @@ export const LISTINGS: Record<CategoryCode, ListingItem[]> = {
   D: DRINKS_LISTINGS,
 };
 
-/** Suggested follow-up prompts offered in the AI channel. */
-export const AI_SUGGESTIONS: Record<CategoryCode, string[]> = {
-  L: [
-    'Which one has the best battery life?',
-    'Is 16 GB RAM enough for four years?',
-    'Compare the top two under ₹70,000',
-    'Does it include MS Office?',
-  ],
-  F: [
-    'Waterproof or breathable for a summer trek?',
-    'Which pair is lightest?',
-    'How should I size trekking shoes?',
-    'Are the sale deals actually good?',
-  ],
-  H: [
-    'Which certificate do employers value most?',
-    'Free vs paid — what changes?',
-    'How long until I am job-ready?',
-    'Compare data analytics and digital marketing',
-  ],
-  D: [
-    'Which drink hydrates best?',
-    'How much sugar is in each option?',
-    'Cheapest option for a group of six?',
-    'Which app delivers fastest?',
-  ],
-};
-
 /**
  * Deterministic assistant replies. Keyword-matched against the corpus so the
  * AI channel presents the same evidence base as the other two channels.

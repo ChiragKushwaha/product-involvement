@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { CompleteSurveySession } from '@/types/survey';
 
 /**
- * Server-side store, backed by a single SQLite file at data/survey.db.
+ * Server-side store with isolated development and production database files.
  *
  * Uses Node's built-in `node:sqlite`, so there is no native dependency to
  * install or rebuild. One row per participant in `sessions` (every scalar the
@@ -13,14 +13,20 @@ import type { CompleteSurveySession } from '@/types/survey';
  * nothing is lost to the flattening.
  */
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DATA_DIR, 'survey.db');
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const DEFAULT_DATA_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'product-involvement')
+  : path.join(process.cwd(), 'data');
+const DEFAULT_DB_NAME = IS_PRODUCTION ? 'survey.production.db' : 'survey.db';
+const DB_PATH = process.env.SURVEY_DB_PATH
+  ? path.resolve(process.env.SURVEY_DB_PATH)
+  : path.join(DEFAULT_DATA_DIR, DEFAULT_DB_NAME);
 
 let db: DatabaseSync | null = null;
 
 function connect(): DatabaseSync {
   if (db) return db;
-  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = new DatabaseSync(DB_PATH);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');

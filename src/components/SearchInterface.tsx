@@ -1,14 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { RefObject, SubmitEvent, UIEvent } from 'react';
+import Script from 'next/script';
 import {
   ArrowLeft,
   Bot,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
-  Globe,
   Link2,
   Loader2,
   Search,
@@ -21,17 +23,16 @@ import type {
   Channel,
   CombinedTelemetry,
   ListingItem,
-  Platform,
   SearchResult,
   Situation,
 } from '@/types/survey';
 import type { TelemetryCollector } from '@/lib/telemetry-tracker';
-import { AI_SUGGESTIONS, LISTINGS, SEARCH_RESULTS, buildAiReply } from '@/lib/search-corpus';
-import { SEED_QUERY } from '@/lib/situations-data';
+import { SEARCH_RESULTS } from '@/lib/search-corpus';
 import { ACCENT_BG, ACCENT_ON, ThemeToggle, cx } from '@/components/ui';
 
 /** Scroll events within this window belong to the same gesture (one CT1 action). */
 const GESTURE_MS = 350;
+const USE_CHATBASE_AI = true;
 
 function useScrollTracker(collector: TelemetryCollector, channel: Channel, sourceId?: string) {
   const lastActionRef = useRef(0);
@@ -96,6 +97,31 @@ interface ReaderState {
   error?: string;
 }
 
+interface GoogleCseWindow extends Window {
+  __gcse?: {
+    parsetags?: 'explicit';
+    callback?: () => void;
+    searchCallbacks?: {
+      web?: { starting?: (gname: string, query: string) => string };
+    };
+  };
+  google?: {
+    search?: {
+      cse?: {
+        element?: {
+          render: (config: {
+            div: string;
+            tag: 'searchresults-only';
+            gname: string;
+            attributes: { linkTarget: string; enableHistory: boolean };
+          }) => void;
+          getElement: (gname: string) => { execute: (query: string) => void } | null;
+        };
+      };
+    };
+  };
+}
+
 export function SearchInterface({
   situation,
   collector,
@@ -107,22 +133,20 @@ export function SearchInterface({
 }) {
   const cat = situation.categoryCode;
   const corpus = SEARCH_RESULTS[cat];
-  const listings = LISTINGS[cat];
 
-  const [channel, setChannel] = useState<Channel>('Google Search');
+  const [channel, setChannel] = useState<Channel>('Direct Website');
   const [taskOpen, setTaskOpen] = useState(false);
 
   // ---- Google channel
-  const [query, setQuery] = useState(SEED_QUERY[cat]);
-  const [submitted, setSubmitted] = useState(SEED_QUERY[cat]);
-  const [results, setResults] = useState<SearchResult[]>(corpus);
+  const [query, setQuery] = useState('');
+  const [submitted, setSubmitted] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [liveMode, setLiveMode] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [resultPage, setResultPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const usedLiveRef = useRef(false);
-
-  // ---- Direct website channel
-  const [platform, setPlatform] = useState<Platform | null>(null);
-  const [siteQuery, setSiteQuery] = useState('');
 
   // ---- AI channel
   const [messages, setMessages] = useState<AiMessage[]>([]);
@@ -141,28 +165,44 @@ export function SearchInterface({
 
   /** Pure fetch — resolves to the corpus whenever live search is unavailable. */
   const fetchResults = useCallback(
-    async (q: string): Promise<{ results: SearchResult[]; live: boolean }> => {
+    async (
+      q: string,
+      page = 1,
+    ): Promise<{ results: SearchResult[]; live: boolean; hasNext: boolean; error?: string }> => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=8`);
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(q)}&limit=8&page=${page}`,
+        );
         const data = await res.json();
         if (data?.mode === 'live' && Array.isArray(data.results) && data.results.length) {
-          return { results: data.results as SearchResult[], live: true };
+          return {
+            results: data.results as SearchResult[],
+            live: true,
+            hasNext: Boolean(data.hasNext),
+          };
         }
+        return {
+          results: [],
+          live: false,
+          hasNext: false,
+          error: data?.error ?? 'Google Search is unavailable.',
+        };
       } catch {
-        /* fall through to the fixed corpus */
+        return { results: [], live: false, hasNext: false, error: 'Could not reach Google Search.' };
       }
-      // Network blocked or nothing parsed — the fixed corpus keeps the task going.
-      return { results: corpus, live: false };
     },
-    [corpus],
+    [],
   );
 
   const runSearch = useCallback(
-    async (q: string) => {
+    async (q: string, page = 1) => {
       setSearching(true);
-      const r = await fetchResults(q);
+      const r = await fetchResults(q, page);
       setResults(r.results);
       setLiveMode(r.live);
+      setResultPage(page);
+      setHasNextPage(r.hasNext);
+      setSearchError(r.error ?? null);
       if (r.live) usedLiveRef.current = true;
       setSearching(false);
     },
@@ -172,21 +212,16 @@ export function SearchInterface({
   /* ---------------------------------------------------------- lifecycle */
 
   useEffect(() => {
-    collector.startSearchTask(SEED_QUERY[cat], 'Google Search');
+    collector.startSearchTask(undefined, 'Direct Website');
+  }, [collector]);
 
-    let cancelled = false;
-    void (async () => {
-      const r = await fetchResults(SEED_QUERY[cat]);
-      if (cancelled) return;
-      setResults(r.results);
-      setLiveMode(r.live);
-      if (r.live) usedLiveRef.current = true;
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [collector, cat, fetchResults]);
+  const switchChannel = (next: Channel) => {
+    if (next === channel) return;
+    collector.logSourceClose();
+    setOpen(null);
+    setChannel(next);
+    mainRef.current?.scrollTo({ top: 0 });
+  };
 
   useEffect(() => {
     const onVisibility = () => {
@@ -209,14 +244,6 @@ export function SearchInterface({
     };
   }, [collector]);
 
-  const switchChannel = (next: Channel) => {
-    if (next === channel) return;
-    collector.logSourceClose();
-    setOpen(null);
-    setChannel(next);
-    mainRef.current?.scrollTo({ top: 0 });
-  };
-
   /* ------------------------------------------------------------ handlers */
 
   const submitQuery = (e: SubmitEvent<HTMLFormElement>) => {
@@ -224,6 +251,7 @@ export function SearchInterface({
     const q = query.trim();
     if (!q || q === submitted) return;
     setSubmitted(q);
+    setResultPage(1);
     collector.logQuery(q, 'Google Search');
     void runSearch(q);
     mainRef.current?.scrollTo({ top: 0 });
@@ -257,10 +285,6 @@ export function SearchInterface({
     collector.logSourceClose();
     setOpen(null);
     setReader({ status: 'idle', paragraphs: [] });
-    // Returning to a platform listing is a repeat access under SN1's definition.
-    if (channel === 'Direct Website' && platform) {
-      collector.logSourceOpen(`site-${platform.id}`, platform.domain, 'Direct Website');
-    }
   };
 
   /** Opens the real site in another window and measures the time away. */
@@ -271,35 +295,7 @@ export function SearchInterface({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const openPlatform = (p: Platform) => {
-    setPlatform(p);
-    setSiteQuery('');
-    collector.logSourceOpen(`site-${p.id}`, p.domain, 'Direct Website');
-  };
-
-  const leavePlatform = () => {
-    collector.logSourceClose();
-    setPlatform(null);
-  };
-
-  const submitSiteQuery = (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const q = siteQuery.trim();
-    if (!q) return;
-    collector.logQuery(q, 'Direct Website');
-  };
-
-  const openProduct = (item: ListingItem) => {
-    setOpen({ kind: 'listing', item });
-    setReader({ status: 'ready', paragraphs: item.detail });
-    collector.logSourceOpen(
-      `item-${item.id}`,
-      `${platform?.domain ?? 'site'}/${item.id}`,
-      'Direct Website',
-    );
-  };
-
-  const sendPrompt = (text: string) => {
+  const sendPrompt = async (text: string) => {
     const p = text.trim();
     if (!p || thinking) return;
 
@@ -307,19 +303,43 @@ export function SearchInterface({
     collector.logQuery(p, 'Conversational AI');
     setPrompt('');
     setThinking(true);
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text: p }]);
+    const userMessage: AiMessage = { id: `u-${Date.now()}`, role: 'user', text: p };
+    const conversation = [...messages, userMessage];
+    setMessages(conversation);
 
-    window.setTimeout(() => {
-      const reply = buildAiReply(cat, p);
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: conversation.map(({ role, text }) => ({ role, text })),
+          category: situation.category,
+          scenario: situation.scenario,
+        }),
+      });
+      const data = await response.json();
+      const replyText = data?.ok && typeof data.text === 'string'
+        ? data.text
+        : data?.error ?? 'The AI assistant is unavailable right now.';
       const id = `a-${Date.now()}`;
-      setMessages((m) => [
-        ...m,
-        { id, role: 'assistant', text: reply.text, citations: reply.citations },
+      setMessages((current) => [
+        ...current,
+        { id, role: 'assistant', text: replyText },
       ]);
       setThinking(false);
       // A response is a dwell/scroll unit but not a "source opened" for SN1/SN2.
       collector.logSourceOpen(id, `ai-response:${p.slice(0, 60)}`, 'Conversational AI', false);
-    }, 700);
+    } catch {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          text: 'The AI assistant could not be reached. Please try again.',
+        },
+      ]);
+      setThinking(false);
+    }
   };
 
   const openCite = async (c: { label: string; url: string }) => {
@@ -377,7 +397,6 @@ export function SearchInterface({
   const mainScroll = useScrollTracker(
     collector,
     channel,
-    channel === 'Direct Website' && platform ? `site-${platform.id}` : undefined,
   );
   const sourceScroll = useScrollTracker(collector, openChannel, openSourceId);
   const threadScroll = useScrollTracker(
@@ -387,12 +406,6 @@ export function SearchInterface({
   );
 
   /* ---------------------------------------------------------------- view */
-
-  const NAV: { key: Channel; icon: typeof Search; label: string }[] = [
-    { key: 'Google Search', icon: Search, label: 'Search' },
-    { key: 'Direct Website', icon: Globe, label: 'Sites' },
-    { key: 'Conversational AI', icon: Bot, label: 'AI' },
-  ];
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
@@ -422,7 +435,7 @@ export function SearchInterface({
           <ThemeToggle />
         </div>
         {taskOpen && (
-          <div className="mt-2 rounded-[20px] bg-card p-4 text-[13px] leading-relaxed text-muted">
+          <div className="ui-reveal mt-2 rounded-[20px] bg-card p-4 text-[13px] leading-relaxed text-muted">
             {situation.scenario}
           </div>
         )}
@@ -435,51 +448,56 @@ export function SearchInterface({
           ref={mainRef}
           onScroll={mainScroll}
           className={cx(
-            'min-h-0 flex-1 overflow-y-auto px-4 lg:px-0',
+            'min-h-0 flex-1 overflow-x-clip overflow-y-auto px-4 lg:px-0',
             open && 'hidden lg:block lg:max-w-md',
           )}
         >
-          {channel === 'Google Search' && (
-            <GoogleChannel
-              query={query}
-              setQuery={setQuery}
-              submitted={submitted}
-              onSubmit={submitQuery}
-              results={results}
-              searching={searching}
-              liveMode={liveMode}
-              activeId={openSourceId}
-              onOpen={openArticle}
-            />
-          )}
+          <div
+            key={channel}
+            className={cx('channel-enter', channel === 'Conversational AI' && 'h-full')}
+          >
+            {channel === 'Google Search' && (
+              <GoogleChannel
+                query={query}
+                setQuery={setQuery}
+                submitted={submitted}
+                onSubmit={submitQuery}
+                results={results}
+                searching={searching}
+                liveMode={liveMode}
+                error={searchError}
+                page={resultPage}
+                hasNextPage={hasNextPage}
+                onPageChange={(page) => void runSearch(submitted, page)}
+                activeId={openSourceId}
+                onOpen={openArticle}
+                embedded
+                collector={collector}
+                onBack={() => switchChannel('Direct Website')}
+              />
+            )}
 
-          {channel === 'Direct Website' && (
-            <DirectChannel
-              situation={situation}
-              platform={platform}
-              onOpenPlatform={openPlatform}
-              onLeavePlatform={leavePlatform}
-              onOpenExternally={(url, id) => openExternally(url, id, 'Direct Website')}
-              siteQuery={siteQuery}
-              setSiteQuery={setSiteQuery}
-              onSubmitSiteQuery={submitSiteQuery}
-              listings={listings}
-              onOpenProduct={openProduct}
-            />
-          )}
+            {channel === 'Direct Website' && (
+              <DirectChannel
+                situation={situation}
+                onOpenExternally={(url, id) => openExternally(url, id, 'Direct Website')}
+                onOpenGoogle={() => switchChannel('Google Search')}
+                onOpenAi={() => switchChannel('Conversational AI')}
+              />
+            )}
 
-          {channel === 'Conversational AI' && (
-            <AiChannel
-              situation={situation}
-              messages={messages}
-              thinking={thinking}
-              suggestions={AI_SUGGESTIONS[cat]}
-              onSend={sendPrompt}
-              onOpenCite={openCite}
-              onScroll={threadScroll}
-              endRef={threadEndRef}
-            />
-          )}
+            {channel === 'Conversational AI' && (
+              <AiChannel
+                situation={situation}
+                messages={messages}
+                thinking={thinking}
+                onBack={() => switchChannel('Direct Website')}
+                onOpenCite={openCite}
+                onScroll={threadScroll}
+                endRef={threadEndRef}
+              />
+            )}
+          </div>
         </main>
 
         {/* Source view: full-screen on phones, a second pane from lg up */}
@@ -495,7 +513,7 @@ export function SearchInterface({
       </div>
 
       {/* -------------------------------------------------- prompt + nav */}
-      {channel === 'Conversational AI' && !open && (
+      {channel === 'Conversational AI' && !open && !USE_CHATBASE_AI && (
         <div className="mx-auto w-full max-w-md shrink-0 px-4 pb-2 pt-2 lg:max-w-6xl lg:px-8">
           <form
             onSubmit={(e) => {
@@ -522,43 +540,139 @@ export function SearchInterface({
         </div>
       )}
 
-      <nav
+      <div
         className="mx-auto w-full max-w-md shrink-0 px-4 pt-2 lg:max-w-6xl lg:px-8"
         style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       >
-        <div className="flex items-center gap-1.5 rounded-full bg-card p-1.5">
-          {NAV.map(({ key, icon: Icon, label }) => {
-            const active = channel === key;
-            return (
-              <button
-                key={key}
-                onClick={() => switchChannel(key)}
-                aria-label={label}
-                aria-current={active}
-                className={cx(
-                  'flex h-[46px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[16px] transition',
-                  active ? 'bg-primary text-on-primary' : 'text-faint active:bg-well',
-                )}
-              >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={2.5} />
-                <span className="text-[9px] font-bold uppercase tracking-wide">{label}</span>
-              </button>
-            );
-          })}
-          <button
-            onClick={finish}
-            className="flex h-[46px] items-center gap-1.5 rounded-[16px] bg-content px-4 text-[12px] font-bold uppercase tracking-wide text-surface transition active:scale-95"
-          >
-            <Check className="h-4 w-4" strokeWidth={3} />
-            Done
-          </button>
-        </div>
-      </nav>
+        <button
+          onClick={finish}
+          className="flex h-[50px] w-full items-center justify-center gap-1.5 rounded-full bg-content px-4 text-[12px] font-bold uppercase tracking-wide text-surface transition active:scale-[0.98]"
+        >
+          <Check className="h-4 w-4" strokeWidth={3} />
+          Done searching
+        </button>
+      </div>
     </div>
   );
 }
 
 /* ====================================================== channel: Google */
+
+const GOOGLE_SEARCH_ENGINE_ID = '125890caa9c4b4550';
+
+function GoogleProgrammableSearch({
+  collector,
+  onBack,
+}: {
+  collector: TelemetryCollector;
+  onBack: () => void;
+}) {
+  const reactId = useId();
+  const idBase = `google-cse-${reactId.replace(/:/g, '')}`;
+  const resultsId = `${idBase}-results`;
+  const renderedRef = useRef(false);
+  const [query, setQuery] = useState('');
+
+  const renderSearch = useCallback(() => {
+    const cseWindow = window as GoogleCseWindow;
+    const render = cseWindow.google?.search?.cse?.element?.render;
+    const results = document.getElementById(resultsId);
+    if (!render || !results || renderedRef.current) return;
+
+    renderedRef.current = true;
+    render({
+      div: resultsId,
+      tag: 'searchresults-only',
+      gname: idBase,
+      attributes: { linkTarget: '_blank', enableHistory: true },
+    });
+  }, [idBase, resultsId]);
+
+  const submitSearch = (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextQuery = query.trim();
+    if (!nextQuery) return;
+    const element = (window as GoogleCseWindow).google?.search?.cse?.element?.getElement(idBase);
+    element?.execute(nextQuery);
+  };
+
+  useEffect(() => {
+    const cseWindow = window as GoogleCseWindow;
+    cseWindow.__gcse = {
+      parsetags: 'explicit',
+      callback: renderSearch,
+      searchCallbacks: {
+        web: {
+          starting: (_gname, query) => {
+            collector.logQuery(query, 'Google Search');
+            return query;
+          },
+        },
+      },
+    };
+    renderSearch();
+
+    return () => {
+      for (const element of [document.documentElement, document.body]) {
+        element.classList.remove('gsc-overflow-hidden');
+        if (element.style.overflow === 'hidden') element.style.removeProperty('overflow');
+        if (element.style.overflowY === 'hidden') element.style.removeProperty('overflow-y');
+      }
+    };
+  }, [collector, renderSearch]);
+
+  return (
+    <div className="min-w-0 overflow-x-clip pb-4">
+      <Script
+        id="google-programmable-search"
+        src={`https://cse.google.com/cse.js?cx=${GOOGLE_SEARCH_ENGINE_ID}`}
+        strategy="afterInteractive"
+        onReady={renderSearch}
+      />
+      <button
+        onClick={onBack}
+        className="mb-4 flex h-10 items-center gap-2 rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
+      >
+        <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+        All options
+      </button>
+      <div className="sticky top-0 z-20 mb-3 rounded-[22px] bg-surface pb-2">
+        <form onSubmit={submitSearch} className="flex items-center gap-2 rounded-full bg-card py-2.5 pl-4 pr-2 ring-1 ring-line">
+          <Search className="h-[18px] w-[18px] shrink-0 text-faint" strokeWidth={2.5} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            enterKeyHint="search"
+            placeholder="Search Google"
+            aria-label="Search Google"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-content outline-none placeholder:text-faint"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="shrink-0 p-1 text-faint"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={!query.trim()}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary disabled:bg-well disabled:text-faint"
+            aria-label="Submit Google search"
+          >
+            <Search className="h-4 w-4" strokeWidth={2.5} />
+          </button>
+        </form>
+      </div>
+      <div className="google-inline-results min-h-56">
+        <div id={resultsId} />
+      </div>
+    </div>
+  );
+}
 
 function GoogleChannel({
   query,
@@ -568,8 +682,15 @@ function GoogleChannel({
   results,
   searching,
   liveMode,
+  error,
+  page,
+  hasNextPage,
+  onPageChange,
   activeId,
   onOpen,
+  embedded,
+  collector,
+  onBack,
 }: {
   query: string;
   setQuery: (v: string) => void;
@@ -578,9 +699,23 @@ function GoogleChannel({
   results: SearchResult[];
   searching: boolean;
   liveMode: boolean;
+  error: string | null;
+  page: number;
+  hasNextPage: boolean;
+  onPageChange: (page: number) => void;
   activeId?: string;
   onOpen: (r: SearchResult) => void;
+  embedded?: boolean;
+  collector?: TelemetryCollector;
+  onBack?: () => void;
 }) {
+  if (embedded && collector && onBack) {
+    return <GoogleProgrammableSearch collector={collector} onBack={onBack} />;
+  }
+
+  const firstVisiblePage = Math.min(6, Math.max(1, page - 2));
+  const visiblePages = Array.from({ length: 5 }, (_, index) => firstVisiblePage + index);
+
   return (
     <div className="pb-4">
       <form onSubmit={onSubmit} className="sticky top-0 z-10 bg-surface pb-3 pt-1">
@@ -611,7 +746,7 @@ function GoogleChannel({
           <span className="flex items-center gap-1.5 text-[12px] text-faint">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
           </span>
-        ) : (
+        ) : submitted ? (
           <>
             <span className="text-[12px] text-faint">
               Results for &ldquo;{submitted}&rdquo;
@@ -622,11 +757,19 @@ function GoogleChannel({
                 liveMode ? 'bg-mint/30 text-content' : 'bg-well text-faint',
               )}
             >
-              {liveMode ? 'Live web' : 'Offline set'}
+              {liveMode ? 'Google' : 'Google unavailable'}
             </span>
           </>
+        ) : (
+          <span className="text-[12px] text-faint">Enter a search to see results.</span>
         )}
       </div>
+
+      {error && (
+        <div className="mb-3 rounded-[18px] bg-blush/35 px-4 py-3 text-[12px] font-medium leading-relaxed text-content">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-2.5">
         {results.map((r) => (
@@ -644,6 +787,47 @@ function GoogleChannel({
           </button>
         ))}
       </div>
+
+      {liveMode && (
+        <nav className="mt-5 flex items-center justify-center gap-1" aria-label="Search result pages">
+          <button
+            type="button"
+            onClick={() => onPageChange(page - 1)}
+            disabled={page === 1 || searching}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted hover:bg-card disabled:opacity-25"
+            aria-label="Previous results page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          {visiblePages.map((pageNumber) => (
+            <button
+              key={pageNumber}
+              type="button"
+              onClick={() => onPageChange(pageNumber)}
+              disabled={searching}
+              aria-label={`Results page ${pageNumber}`}
+              aria-current={pageNumber === page ? 'page' : undefined}
+              className={cx(
+                'flex h-9 min-w-8 items-center justify-center rounded-full px-1.5 text-[12px] font-bold transition',
+                pageNumber === page
+                  ? 'bg-primary text-on-primary'
+                  : 'text-primary hover:bg-primary-soft',
+              )}
+            >
+              {pageNumber}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => onPageChange(page + 1)}
+            disabled={!hasNextPage || searching}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted hover:bg-card disabled:opacity-25"
+            aria-label="Next results page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
@@ -652,112 +836,57 @@ function GoogleChannel({
 
 function DirectChannel({
   situation,
-  platform,
-  onOpenPlatform,
-  onLeavePlatform,
   onOpenExternally,
-  siteQuery,
-  setSiteQuery,
-  onSubmitSiteQuery,
-  listings,
-  onOpenProduct,
+  onOpenGoogle,
+  onOpenAi,
 }: {
   situation: Situation;
-  platform: Platform | null;
-  onOpenPlatform: (p: Platform) => void;
-  onLeavePlatform: () => void;
   onOpenExternally: (url: string, sourceId: string) => void;
-  siteQuery: string;
-  setSiteQuery: (v: string) => void;
-  onSubmitSiteQuery: (e: SubmitEvent<HTMLFormElement>) => void;
-  listings: ListingItem[];
-  onOpenProduct: (i: ListingItem) => void;
+  onOpenGoogle: () => void;
+  onOpenAi: () => void;
 }) {
-  if (!platform) {
-    return (
-      <div className="pb-4">
-        <h2 className="display mb-1 pt-1 text-[22px]">Official websites</h2>
-        <p className="mb-4 text-[13px] text-muted">
-          Open any of the {situation.category.toLowerCase()} sites below.
-        </p>
-        <div className="space-y-2.5 sm:grid sm:grid-cols-2 sm:gap-2.5 sm:space-y-0">
-          {situation.platforms.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => onOpenPlatform(p)}
-              className={cx(
-                'flex w-full items-center justify-between rounded-[20px] p-4 text-left transition active:scale-[0.99]',
-                ACCENT_BG[p.tint],
-                ACCENT_ON[p.tint],
-              )}
-            >
-              <div>
-                <p className="display text-[19px] leading-none">{p.name}</p>
-                <p className="mt-1.5 text-[11px] font-semibold opacity-55">{p.domain}</p>
-              </div>
-              <Link2 className="h-5 w-5 opacity-60" strokeWidth={2.5} />
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pb-4">
-      <div className="sticky top-0 z-10 bg-surface pb-3 pt-1">
-        <div className="mb-2.5 flex items-center gap-2.5">
-          <button
-            onClick={onLeavePlatform}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-card"
-            aria-label="All sites"
-          >
-            <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="display truncate text-[17px] leading-none">{platform.name}</p>
-            <p className="text-[11px] text-faint">{platform.domain}</p>
+      <h2 className="display mb-1 pt-1 text-[22px]">Official websites</h2>
+      <p className="mb-4 text-[13px] text-muted">
+        Select any option to open it directly.
+      </p>
+      <div className="space-y-2.5 sm:grid sm:grid-cols-2 sm:gap-2.5 sm:space-y-0">
+        <button
+          onClick={onOpenGoogle}
+          className="flex w-full items-center justify-between rounded-[20px] bg-card p-4 text-left text-content transition active:scale-[0.99]"
+        >
+          <div>
+            <p className="display text-[19px] leading-none">Google Search</p>
+            <p className="mt-1.5 text-[11px] font-semibold opacity-55">google.com</p>
           </div>
-          <button
-            onClick={() => onOpenExternally(`https://${platform.domain}`, `ext-${platform.id}`)}
-            className="flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-3 py-2 text-[11px] font-bold text-on-primary"
-          >
-            <ExternalLink className="h-3.5 w-3.5" strokeWidth={2.5} />
-            Visit site
-          </button>
-        </div>
-
-        <form onSubmit={onSubmitSiteQuery}>
-          <div className="flex items-center gap-2 rounded-full bg-card py-2.5 pl-4 pr-2">
-            <Search className="h-[18px] w-[18px] shrink-0 text-faint" strokeWidth={2.5} />
-            <input
-              value={siteQuery}
-              onChange={(e) => setSiteQuery(e.target.value)}
-              enterKeyHint="search"
-              placeholder={`Search on ${platform.name}`}
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-content outline-none placeholder:text-faint"
-            />
+          <Search className="h-5 w-5 opacity-60" strokeWidth={2.5} />
+        </button>
+        <button
+          onClick={onOpenAi}
+          className="flex w-full items-center justify-between rounded-[20px] bg-peri p-4 text-left text-white transition active:scale-[0.99]"
+        >
+          <div>
+            <p className="display text-[19px] leading-none">Search on AI</p>
+            <p className="mt-1.5 text-[11px] font-semibold opacity-65">chatgpt.com</p>
           </div>
-        </form>
-      </div>
-
-      <div className="space-y-2.5">
-        {listings.map((item) => (
+          <Bot className="h-5 w-5 opacity-70" strokeWidth={2.5} />
+        </button>
+        {situation.platforms.map((p) => (
           <button
-            key={item.id}
-            onClick={() => onOpenProduct(item)}
-            className="block w-full rounded-[20px] bg-card p-4 text-left transition active:opacity-80"
+            key={p.id}
+            onClick={() => onOpenExternally(`https://${p.domain}`, `ext-${p.id}`)}
+            className={cx(
+              'flex w-full items-center justify-between rounded-[20px] p-4 text-left transition active:scale-[0.99]',
+              ACCENT_BG[p.tint],
+              ACCENT_ON[p.tint],
+            )}
           >
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <h3 className="text-[15px] font-bold leading-snug">{item.name}</h3>
-              <span className="shrink-0 text-[15px] font-bold text-primary">{item.price}</span>
+            <div>
+              <p className="display text-[19px] leading-none">{p.name}</p>
+              <p className="mt-1.5 text-[11px] font-semibold opacity-55">{p.domain}</p>
             </div>
-            <p className="mb-2 text-[12px] text-faint">{item.meta}</p>
-            <div className="flex items-center gap-1.5">
-              <Star className="h-3.5 w-3.5 fill-butter text-butter" />
-              <span className="text-[12px] font-semibold text-muted">{item.rating}</span>
-              <span className="text-[12px] text-faint">({item.ratingCount})</span>
-            </div>
+            <ExternalLink className="h-5 w-5 opacity-60" strokeWidth={2.5} />
           </button>
         ))}
       </div>
@@ -771,8 +900,7 @@ function AiChannel({
   situation,
   messages,
   thinking,
-  suggestions,
-  onSend,
+  onBack,
   onOpenCite,
   onScroll,
   endRef,
@@ -780,14 +908,42 @@ function AiChannel({
   situation: Situation;
   messages: AiMessage[];
   thinking: boolean;
-  suggestions: string[];
-  onSend: (t: string) => void;
+  onBack: () => void;
   onOpenCite: (c: { label: string; url: string }) => void;
   onScroll: (e: UIEvent<HTMLElement>) => void;
   endRef: RefObject<HTMLDivElement | null>;
 }) {
+  if (USE_CHATBASE_AI) {
+    return (
+      <div className="flex h-full min-h-[520px] flex-col pb-2">
+        <button
+          onClick={onBack}
+          className="mb-3 flex h-10 shrink-0 items-center gap-2 self-start rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
+        >
+          <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+          All options
+        </button>
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[22px] bg-card">
+          <iframe
+            allow="microphone"
+            title="Ask AI"
+            src="https://www.chatbase.co/chatbot-iframe/kIPeAJ4dLUiUr1BUMU-XU?theme=dark"
+            className="absolute inset-0 flex h-full w-full border-0"
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onScroll={onScroll} className="pb-4">
+      <button
+        onClick={onBack}
+        className="mb-4 flex h-10 items-center gap-2 rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
+      >
+        <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+        All options
+      </button>
       {messages.length === 0 && (
         <div className="pt-2">
           <div className="mb-4 flex items-center gap-2.5">
@@ -802,17 +958,6 @@ function AiChannel({
           <p className="mb-4 text-[14px] leading-relaxed text-muted">
             Ask me anything before you decide — comparisons, what to check, prices, or trade-offs.
           </p>
-          <div className="space-y-2">
-            {suggestions.map((s) => (
-              <button
-                key={s}
-                onClick={() => onSend(s)}
-                className="block w-full rounded-2xl bg-card px-4 py-3 text-left text-[13.5px] font-medium text-muted transition active:opacity-80"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Bot, Globe, RotateCcw, Search } from 'lucide-react';
+import { ArrowRight, RotateCcw } from 'lucide-react';
 import type { SemanticDifferential, Situation } from '@/types/survey';
 import {
   ActionBar,
@@ -79,24 +79,6 @@ export function ProductInvolvementForm({
             gathered sufficient information and are ready to make your decision, click continue
             to proceed to the last few questions.
           </p>
-        </div>
-
-        <div className="mb-2 grid grid-cols-3 gap-2.5">
-          {[
-            { icon: Search, label: 'Google\nSearch', tint: 'bg-sky text-[#16181a]' },
-            { icon: Globe, label: 'Official\nWebsites', tint: 'bg-butter text-[#16181a]' },
-            { icon: Bot, label: 'AI\nChatbot', tint: 'bg-peri text-white' },
-          ].map(({ icon: Icon, label, tint }) => (
-            <div
-              key={label}
-              className={`flex aspect-square flex-col items-center justify-center gap-2 rounded-[20px] ${tint}`}
-            >
-              <Icon className="h-6 w-6" strokeWidth={2.5} />
-              <span className="whitespace-pre-line text-center text-[11px] font-bold uppercase leading-tight tracking-wide">
-                {label}
-              </span>
-            </div>
-          ))}
         </div>
 
         <ActionBar>

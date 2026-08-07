@@ -289,7 +289,7 @@ export function Dashboard({ data, token }: { data: Aggregates; token?: string })
           className="flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-primary text-[13px] font-bold text-on-primary transition active:scale-[0.98]"
         >
           <Table2 className="h-4 w-4" strokeWidth={2.5} />
-          Responses CSV
+          Download all data CSV
         </a>
         <a
           href={`/api/export?format=events${qs}`}

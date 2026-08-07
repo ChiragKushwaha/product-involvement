@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { BarChart3, CheckCircle2, RotateCcw } from 'lucide-react';
+import { CheckCircle2, RotateCcw } from 'lucide-react';
 
 import { DemographicsForm } from '@/components/DemographicsForm';
 import { SituationGrid } from '@/components/SituationGrid';
@@ -245,18 +245,11 @@ export default function Home() {
               )}
             </div>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4">
               <PrimaryButton onClick={resetAll} tone="neutral">
                 <RotateCcw className="h-4 w-4" strokeWidth={3} />
                 Start a new session
               </PrimaryButton>
-              <a
-                href="/dashboard"
-                className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-full bg-card text-[13px] font-semibold text-muted transition active:opacity-80"
-              >
-                <BarChart3 className="h-4 w-4" strokeWidth={2.5} />
-                Researcher dashboard
-              </a>
             </div>
           </div>
         </Screen>
