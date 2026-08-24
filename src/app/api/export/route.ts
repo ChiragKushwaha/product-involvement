@@ -19,14 +19,32 @@ export async function GET(request: Request) {
   }
 
   const format = new URL(request.url).searchParams.get('format') ?? 'responses';
+  const requestedSessionId = new URL(request.url).searchParams.get('sessionId');
   const stamp = new Date().toISOString().slice(0, 10);
-  const sessions = await listDriveSessions();
+  let sessions;
+  try {
+    sessions = await listDriveSessions();
+  } catch (error) {
+    return Response.json(
+      { ok: false, error: error instanceof Error ? error.message : 'Could not load Drive data' },
+      { status: 502 },
+    );
+  }
+  if (requestedSessionId) {
+    sessions = sessions.filter((session) => session.sessionId === requestedSessionId);
+    if (sessions.length === 0) {
+      return Response.json({ ok: false, error: 'Participant response not found' }, { status: 404 });
+    }
+  }
+  const fileKey = requestedSessionId
+    ? requestedSessionId.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 100)
+    : stamp;
 
   if (format === 'json') {
     return new Response(JSON.stringify(sessions, null, 2), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Disposition': `attachment; filename="survey-responses-${stamp}.json"`,
+        'Content-Disposition': `attachment; filename="survey-responses-${fileKey}.json"`,
       },
     });
   }
@@ -37,7 +55,7 @@ export async function GET(request: Request) {
   return new Response(body, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${name}-${stamp}.csv"`,
+      'Content-Disposition': `attachment; filename="${name}-${fileKey}.csv"`,
     },
   });
 }

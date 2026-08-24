@@ -34,9 +34,11 @@ export default async function DashboardPage({ searchParams }: PageProps<'/dashbo
   }
 
   let data;
+  let loadError: string | undefined;
   try {
     data = aggregateSessions(await listDriveSessions());
-  } catch {
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : 'Could not load Drive data';
     data = {
       total: 0,
       byInvolvement: [],
@@ -50,7 +52,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/dashbo
 
   return (
     <main id="main" className="flex-1">
-      <Dashboard data={data} token={token} />
+      <Dashboard data={data} token={token} loadError={loadError} />
     </main>
   );
 }

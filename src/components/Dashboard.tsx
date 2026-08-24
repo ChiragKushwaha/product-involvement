@@ -225,7 +225,15 @@ const CHANNEL_LABEL: Record<string, string> = {
   AI: 'AI',
 };
 
-export function Dashboard({ data, token }: { data: Aggregates; token?: string }) {
+export function Dashboard({
+  data,
+  token,
+  loadError,
+}: {
+  data: Aggregates;
+  token?: string;
+  loadError?: string;
+}) {
   const [showTable, setShowTable] = useState(false);
   const qs = token ? `&token=${encodeURIComponent(token)}` : '';
 
@@ -273,6 +281,16 @@ export function Dashboard({ data, token }: { data: Aggregates; token?: string })
         </div>
         <ThemeToggle />
       </header>
+
+      {loadError && (
+        <div role="alert" className="mb-4 rounded-[20px] border border-red-500/30 bg-red-500/10 p-4">
+          <p className="text-[13px] font-bold text-content">Drive data could not be loaded</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
+            {loadError}. Redeploy the latest <code>scripts/drive-receiver.gs</code> as a new Apps
+            Script web-app version, then refresh this dashboard.
+          </p>
+        </div>
+      )}
 
       {/* ------------------------------------------------------ stat tiles */}
       <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">

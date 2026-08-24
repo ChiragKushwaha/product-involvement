@@ -88,6 +88,37 @@ function randomPart() {
   return Math.random().toString(36).slice(2, 14);
 }
 
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function compressedChunkPayload(payload: {
+  sessionId: string;
+  tabId: string;
+  sequence: number;
+  events: string[];
+}): Promise<Record<string, unknown>> {
+  if (typeof CompressionStream === 'undefined') return payload;
+  try {
+    const input = new Blob([JSON.stringify(payload)]).stream();
+    const compressed = input.pipeThrough(new CompressionStream('gzip'));
+    const bytes = new Uint8Array(await new Response(compressed).arrayBuffer());
+    return {
+      sessionId: payload.sessionId,
+      tabId: payload.tabId,
+      sequence: payload.sequence,
+      eventCount: payload.events.length,
+      compressedData: bytesToBase64(bytes),
+    };
+  } catch {
+    return payload;
+  }
+}
+
 /**
  * Records reconstructable DOM events rather than screen pixels. Uploads are
  * durably queued in IndexedDB before any network request, and Drive writes are
@@ -108,6 +139,7 @@ export class SessionReplayRecorder {
   private flushTimer: ReturnType<typeof setInterval> | undefined;
   private startPromise: Promise<void> | undefined;
   private drainPromise: Promise<void> | undefined;
+  private flushChain: Promise<void> = Promise.resolve();
 
   private readonly onOnline = () => void this.drainQueue();
   private readonly onVisibility = () => {
@@ -115,13 +147,22 @@ export class SessionReplayRecorder {
     if (document.hidden) void this.flush();
   };
 
-  start(sessionId: string) {
+  start(sessionId = '') {
     if (this.startPromise || this.stopFn) return this.startPromise ?? Promise.resolve();
     this.sessionId = sessionId;
     this.startedAt = new Date().toISOString();
 
     this.startPromise = this.startRecording();
     return this.startPromise;
+  }
+
+  setSessionId(sessionId: string) {
+    if (this.sessionId && this.sessionId !== sessionId) {
+      throw new Error('This replay already belongs to another participant');
+    }
+    this.sessionId = sessionId;
+    this.addCustomEvent('participant_identified', { sessionId });
+    void this.flush();
   }
 
   private async startRecording() {
@@ -150,9 +191,9 @@ export class SessionReplayRecorder {
       collectFonts: false,
       slimDOMOptions: 'all',
       sampling: {
-        mousemove: 50,
-        scroll: 100,
-        media: 500,
+        mousemove: 100,
+        scroll: 150,
+        media: 750,
       },
       errorHandler: (error) => {
         console.warn('Session replay recorder skipped an event', error);
@@ -191,7 +232,13 @@ export class SessionReplayRecorder {
     }
   }
 
-  async flush() {
+  flush() {
+    const next = this.flushChain.then(() => this.flushNow());
+    this.flushChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async flushNow() {
     if (!this.sessionId || this.buffer.length === 0) return;
 
     const events = this.buffer;
@@ -200,12 +247,13 @@ export class SessionReplayRecorder {
     const sequence = this.sequence++;
     this.chunkCount += 1;
 
-    const payload = {
+    const rawPayload = {
       sessionId: this.sessionId,
       tabId: this.tabId,
       sequence,
       events,
     };
+    const payload = await compressedChunkPayload(rawPayload);
     await this.enqueue({
       id: `${this.sessionId}:chunk:${this.tabId}:${sequence}`,
       sessionId: this.sessionId,

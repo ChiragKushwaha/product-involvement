@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, LoaderCircle, Pause, Play, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Download, FileJson, LoaderCircle, Pause, Play, RotateCcw, Table2 } from 'lucide-react';
 import { Replayer } from '@rrweb/replay';
 import { unpack } from '@rrweb/packer';
 import type { ReplayChunkDescriptor, ReplayManifest } from '@/lib/drive-replays';
@@ -25,6 +25,14 @@ async function loadWithConcurrency<T, R>(
   return results;
 }
 
+function groupsOf<T>(items: T[], size: number) {
+  const groups: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    groups.push(items.slice(index, index + size));
+  }
+  return groups;
+}
+
 export function ReplayPlayer({
   sessionId,
   token,
@@ -34,12 +42,15 @@ export function ReplayPlayer({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const replayerRef = useRef<Replayer | null>(null);
+  const scrubbingRef = useRef(false);
   const [manifest, setManifest] = useState<ReplayManifest | null>(null);
   const [events, setEvents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(4);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,24 +64,46 @@ export function ReplayPlayer({
         if (!metaResponse.ok || !meta?.ok) throw new Error(meta?.error ?? 'Replay not found');
 
         const descriptors = meta.chunks as ReplayChunkDescriptor[];
-        const chunks = await loadWithConcurrency(
-          descriptors,
-          4,
-          async (descriptor) => {
-            const params = new URLSearchParams({ chunk: descriptor.fileName });
+        const batches = await loadWithConcurrency(
+          groupsOf(descriptors, 8),
+          2,
+          async (batch) => {
+            const params = new URLSearchParams();
+            batch.forEach((descriptor) => params.append('chunk', descriptor.fileName));
             if (token) params.set('token', token);
             const response = await fetch(
               `/api/replays/${encodeURIComponent(sessionId)}?${params.toString()}`,
             );
             const data = await response.json();
-            if (!response.ok || !data?.ok || !Array.isArray(data.events)) {
-              throw new Error(data?.error ?? `Could not load chunk ${descriptor.sequence}`);
+            if ((!response.ok || !data?.ok) && batch.length > 1) {
+              // Backward-compatible fallback for a receiver that has not yet
+              // been redeployed with the batch-read action.
+              return Promise.all(batch.map(async (descriptor) => {
+                const single = new URLSearchParams({ chunk: descriptor.fileName });
+                if (token) single.set('token', token);
+                const singleResponse = await fetch(
+                  `/api/replays/${encodeURIComponent(sessionId)}?${single.toString()}`,
+                );
+                const singleData = await singleResponse.json();
+                if (!singleResponse.ok || !singleData?.ok || !Array.isArray(singleData.events)) {
+                  throw new Error(singleData?.error ?? `Could not load chunk ${descriptor.sequence}`);
+                }
+                return { sequence: descriptor.sequence, events: singleData.events as string[] };
+              }));
             }
-            return { sequence: descriptor.sequence, events: data.events as string[] };
+            if (!response.ok || !data?.ok) {
+              throw new Error(data?.error ?? 'Could not load replay chunks');
+            }
+            if (batch.length === 1 && Array.isArray(data.events)) {
+              return [{ sequence: batch[0].sequence, events: data.events as string[] }];
+            }
+            if (!Array.isArray(data.chunks)) throw new Error('Drive returned malformed replay data');
+            return data.chunks as { sequence: number; events: string[] }[];
           },
         );
 
         if (cancelled) return;
+        const chunks = batches.flat();
         chunks.sort((a, b) => a.sequence - b.sequence);
         setManifest(meta.manifest as ReplayManifest);
         setEvents(chunks.flatMap((chunk) => chunk.events));
@@ -93,12 +126,26 @@ export function ReplayPlayer({
       root: rootRef.current,
       unpackFn: unpack,
       skipInactive: true,
-      speed: 1,
+      speed: 4,
       mouseTail: { duration: 400, lineWidth: 2, strokeStyle: '#5951d8' },
     });
     replayerRef.current = replayer;
+    setDuration(replayer.getMetaData().totalTime);
+    setCurrentTime(0);
     setPlaying(false);
+    const finish = () => {
+      setPlaying(false);
+      setCurrentTime(replayer.getMetaData().totalTime);
+    };
+    replayer.on('finish', finish);
+    const timer = window.setInterval(() => {
+      if (!scrubbingRef.current) {
+        setCurrentTime(Math.min(replayer.getCurrentTime(), replayer.getMetaData().totalTime));
+      }
+    }, 150);
     return () => {
+      window.clearInterval(timer);
+      replayer.off('finish', finish);
       replayer.destroy();
       replayerRef.current = null;
     };
@@ -107,8 +154,11 @@ export function ReplayPlayer({
   const togglePlayback = () => {
     const replayer = replayerRef.current;
     if (!replayer) return;
-    if (playing) replayer.pause();
-    else replayer.play();
+    if (playing) {
+      replayer.pause();
+      setCurrentTime(replayer.getCurrentTime());
+    }
+    else replayer.play(currentTime >= duration ? 0 : currentTime);
     setPlaying((value) => !value);
   };
 
@@ -117,6 +167,7 @@ export function ReplayPlayer({
     if (!replayer) return;
     replayer.pause(0);
     replayer.play(0);
+    setCurrentTime(0);
     setPlaying(true);
   };
 
@@ -125,7 +176,22 @@ export function ReplayPlayer({
     replayerRef.current?.setConfig({ speed: next });
   };
 
+  const seek = (next: number) => {
+    const replayer = replayerRef.current;
+    if (!replayer) return;
+    replayer.pause(next);
+    scrubbingRef.current = false;
+    setPlaying(false);
+    setCurrentTime(next);
+  };
+
+  const formatTime = (milliseconds: number) => {
+    const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  };
+
   const dashboardHref = token ? `/replays?token=${encodeURIComponent(token)}` : '/replays';
+  const participantQuery = `&sessionId=${encodeURIComponent(sessionId)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
   return (
     <main id="main" className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
@@ -146,6 +212,27 @@ export function ReplayPlayer({
         </div>
         <ThemeToggle />
       </header>
+
+      <div className="mb-4 grid gap-2 sm:grid-cols-3">
+        <a
+          href={`/api/export?format=responses${participantQuery}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary text-[12px] font-bold text-on-primary"
+        >
+          <Table2 className="h-4 w-4" /> Response CSV
+        </a>
+        <a
+          href={`/api/export?format=events${participantQuery}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-card text-[12px] font-semibold text-muted"
+        >
+          <Download className="h-4 w-4" /> Event log CSV
+        </a>
+        <a
+          href={`/api/export?format=json${participantQuery}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-card text-[12px] font-semibold text-muted"
+        >
+          <FileJson className="h-4 w-4" /> Raw JSON
+        </a>
+      </div>
 
       {loading && (
         <div className="flex min-h-72 items-center justify-center rounded-[22px] bg-card">
@@ -186,9 +273,38 @@ export function ReplayPlayer({
               onChange={(event) => changeSpeed(Number(event.target.value))}
               className="min-h-11 rounded-full bg-well px-3 text-content"
             >
-              {[0.5, 1, 2, 4].map((value) => <option key={value} value={value}>{value}×</option>)}
+              {[1, 2, 4, 8, 16].map((value) => <option key={value} value={value}>{value}×</option>)}
             </select>
           </label>
+          <div className="flex basis-full items-center gap-3 px-2 pb-1 pt-1">
+            <span className="w-10 text-right text-[11px] font-semibold tabular-nums text-faint">
+              {formatTime(currentTime)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(1, duration)}
+              step={100}
+              value={Math.min(currentTime, Math.max(1, duration))}
+              onPointerDown={() => {
+                scrubbingRef.current = true;
+                replayerRef.current?.pause();
+                setPlaying(false);
+              }}
+              onChange={(event) => {
+                scrubbingRef.current = true;
+                setCurrentTime(Number(event.target.value));
+              }}
+              onPointerUp={(event) => seek(Number(event.currentTarget.value))}
+              onKeyUp={(event) => seek(Number(event.currentTarget.value))}
+              onBlur={(event) => seek(Number(event.currentTarget.value))}
+              aria-label="Session replay timeline"
+              className="h-2 min-w-0 flex-1 cursor-pointer accent-primary"
+            />
+            <span className="w-10 text-[11px] font-semibold tabular-nums text-faint">
+              {formatTime(duration)}
+            </span>
+          </div>
         </div>
         <div className="overflow-auto rounded-[22px] bg-card p-2 sm:p-4">
           <div ref={rootRef} className="min-h-[420px] min-w-[360px]" />

@@ -24,7 +24,12 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  if (!session?.sessionId || !session?.situation || !session?.telemetry) {
+  if (
+    !session?.sessionId ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9-]{7,119}$/.test(session.sessionId) ||
+    !session?.situation ||
+    !session?.telemetry
+  ) {
     return Response.json({ ok: false, error: 'Malformed session payload' }, { status: 400 });
   }
 

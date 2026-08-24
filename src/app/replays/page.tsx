@@ -1,6 +1,8 @@
 import Link from 'next/link';
-import { ArrowLeft, Play } from 'lucide-react';
+import { ArrowLeft, Download, FileJson, Play, Table2 } from 'lucide-react';
 import { listDriveReplays, type ReplayManifest } from '@/lib/drive-replays';
+import { listDriveSessions } from '@/lib/drive-data';
+import type { CompleteSurveySession } from '@/types/survey';
 import { ThemeToggle } from '@/components/ui';
 
 export const runtime = 'nodejs';
@@ -29,12 +31,19 @@ export default async function ReplaysPage({
   }
 
   let sessions: ReplayManifest[] = [];
+  let responses: CompleteSurveySession[] = [];
   let error: string | null = null;
   try {
     sessions = await listDriveReplays();
   } catch (loadError) {
     error = loadError instanceof Error ? loadError.message : 'Could not load Drive replays';
   }
+  try {
+    responses = await listDriveSessions();
+  } catch (loadError) {
+    error ??= loadError instanceof Error ? loadError.message : 'Could not load Drive responses';
+  }
+  const responseById = new Map(responses.map((response) => [response.sessionId, response]));
 
   const dashboardHref = token ? `/dashboard?token=${encodeURIComponent(token)}` : '/dashboard';
   return (
@@ -54,8 +63,30 @@ export default async function ReplaysPage({
 
       {error && <div className="mb-4 rounded-[20px] bg-card p-4 text-[13px] text-muted">{error}</div>}
 
+      <div className="mb-5 grid gap-2 sm:grid-cols-3">
+        <a
+          href={`/api/export?format=responses${token ? `&token=${encodeURIComponent(token)}` : ''}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary text-[12px] font-bold text-on-primary"
+        >
+          <Table2 className="h-4 w-4" /> All responses CSV
+        </a>
+        <a
+          href={`/api/export?format=events${token ? `&token=${encodeURIComponent(token)}` : ''}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-card text-[12px] font-semibold text-muted"
+        >
+          <Download className="h-4 w-4" /> Event log CSV
+        </a>
+        <a
+          href={`/api/export?format=json${token ? `&token=${encodeURIComponent(token)}` : ''}`}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-card text-[12px] font-semibold text-muted"
+        >
+          <FileJson className="h-4 w-4" /> Raw JSON
+        </a>
+      </div>
+
       <div className="grid gap-2.5">
         {sessions.map((session) => {
+          const response = responseById.get(session.sessionId);
           const href = token
             ? `/replays/${encodeURIComponent(session.sessionId)}?token=${encodeURIComponent(token)}`
             : `/replays/${encodeURIComponent(session.sessionId)}`;
@@ -69,8 +100,13 @@ export default async function ReplaysPage({
                 <Play className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-bold">{session.sessionId}</span>
+                <span className="block truncate text-[14px] font-bold">
+                  {response
+                    ? `${response.demographics.fullName} · ${response.demographics.age} · ${response.demographics.gender}`
+                    : session.sessionId}
+                </span>
                 <span className="mt-0.5 block text-[12px] text-faint">
+                  {response && <>{session.sessionId} · </>}
                   {session.completedAt ? new Date(session.completedAt).toLocaleString('en-IN') : 'Completed'}
                 </span>
               </span>

@@ -3,7 +3,7 @@ import { callDriveWebhook } from '@/lib/drive-webhook';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const SESSION_ID = /^S-[a-zA-Z0-9-]{8,80}$/;
+const SESSION_ID = /^[a-zA-Z0-9][a-zA-Z0-9-]{7,119}$/;
 
 export async function POST(request: Request) {
   let payload: Record<string, unknown>;

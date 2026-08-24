@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import type { SemanticDifferential, Situation } from '@/types/survey';
 import {
@@ -37,8 +37,17 @@ export function ProductInvolvementForm({
 }) {
   const [phase, setPhase] = useState<'scale' | 'briefing'>('scale');
   const [data, setData] = useState<SemanticDifferential>(initialData);
+  const [attempted, setAttempted] = useState(false);
+  const itemRefs = useRef(new Map<keyof SemanticDifferential, HTMLDivElement>());
 
   const complete = ITEMS.every((it) => data[it.key] > 0);
+  const showFirstMissing = () => {
+    setAttempted(true);
+    const missing = ITEMS.find((item) => data[item.key] === 0);
+    const target = missing ? itemRefs.current.get(missing.key) : undefined;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target?.focus(), 350);
+  };
 
   if (phase === 'briefing') {
     return (
@@ -118,7 +127,16 @@ export function ProductInvolvementForm({
       </div>
 
       {ITEMS.map((item) => (
-        <div key={item.key} className="mb-5 rounded-[22px] bg-card p-4">
+        <div
+          key={item.key}
+          ref={(node) => {
+            if (node) itemRefs.current.set(item.key, node);
+            else itemRefs.current.delete(item.key);
+          }}
+          tabIndex={-1}
+          aria-invalid={attempted && data[item.key] === 0}
+          className="mb-5 scroll-mt-24 rounded-[22px] bg-card p-4 outline-none"
+        >
           <LikertScale
             value={data[item.key]}
             onChange={(v) => setData((prev) => ({ ...prev, [item.key]: v }))}
@@ -126,11 +144,20 @@ export function ProductInvolvementForm({
             rightAnchor={item.right}
             name={`${item.left} to ${item.right}`}
           />
+          {attempted && data[item.key] === 0 && (
+            <p className="mt-3 text-[12px] font-semibold text-red-600 dark:text-red-400">
+              Please choose a rating.
+            </p>
+          )}
         </div>
       ))}
 
       <ActionBar>
-        <PrimaryButton disabled={!complete} onClick={() => setPhase('briefing')}>
+        <PrimaryButton
+          disabled={!complete}
+          onDisabledClick={showFirstMissing}
+          onClick={() => setPhase('briefing')}
+        >
           Continue
           <ArrowRight className="h-4 w-4" strokeWidth={3} />
         </PrimaryButton>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { ArrowLeft, Check, Moon, Sun } from 'lucide-react';
 import type { AccentName } from '@/types/survey';
 
@@ -185,25 +185,37 @@ export function PrimaryButton({
   children,
   disabled,
   onClick,
+  onDisabledClick,
   type = 'button',
   tone = 'primary',
 }: {
   children: ReactNode;
   disabled?: boolean;
   onClick?: () => void;
+  onDisabledClick?: () => void;
   type?: 'button' | 'submit';
   tone?: 'primary' | 'neutral';
 }) {
   return (
     <button
       type={type}
-      onClick={onClick}
-      disabled={disabled}
+      onClick={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          onDisabledClick?.();
+          return;
+        }
+        onClick?.();
+      }}
+      disabled={disabled && !onDisabledClick}
+      aria-disabled={disabled || undefined}
       className={cx(
-        'flex min-h-[54px] w-full items-center justify-center gap-2 rounded-full px-6 text-[15px] font-bold uppercase tracking-wide transition active:scale-[0.98] disabled:cursor-not-allowed',
-        tone === 'primary'
-          ? 'bg-primary text-on-primary hover:opacity-90 disabled:bg-well disabled:text-faint disabled:hover:opacity-100'
-          : 'bg-card text-content hover:opacity-90 disabled:text-faint',
+        'flex min-h-[54px] w-full items-center justify-center gap-2 rounded-full px-6 text-[15px] font-bold uppercase tracking-wide transition active:scale-[0.98]',
+        disabled
+          ? 'cursor-not-allowed bg-well text-faint hover:opacity-100'
+          : tone === 'primary'
+            ? 'bg-primary text-on-primary hover:opacity-90'
+            : 'bg-card text-content hover:opacity-90',
       )}
     >
       {children}
@@ -231,15 +243,24 @@ export function ChoiceGroup<T extends string>({
   value,
   onChange,
   columns = 1,
+  error,
+  groupRef,
 }: {
   label: string;
   options: readonly T[];
   value: T | '';
   onChange: (v: T) => void;
   columns?: 1 | 2;
+  error?: string;
+  groupRef?: Ref<HTMLFieldSetElement>;
 }) {
   return (
-    <fieldset className="mb-6">
+    <fieldset
+      ref={groupRef}
+      tabIndex={-1}
+      aria-invalid={Boolean(error)}
+      className="mb-6 scroll-mt-24 outline-none"
+    >
       <legend className="mb-2.5 text-[13px] font-semibold text-muted">{label}</legend>
       <div className={cx('grid gap-2', columns === 2 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2')}>
         {options.map((opt) => {
@@ -263,6 +284,7 @@ export function ChoiceGroup<T extends string>({
           );
         })}
       </div>
+      {error && <p className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{error}</p>}
     </fieldset>
   );
 }
@@ -272,22 +294,34 @@ export function TextField({
   value,
   onChange,
   placeholder,
+  error,
+  inputRef,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  error?: string;
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   return (
     <label className="mb-6 block">
       <span className="mb-2.5 block text-[13px] font-semibold text-muted">{label}</span>
       <input
+        ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="name"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? 'full-name-error' : undefined}
         className="w-full rounded-2xl bg-card px-4 py-3.5 text-[15px] text-content outline-none placeholder:text-faint focus:ring-2 focus:ring-primary"
       />
+      {error && (
+        <span id="full-name-error" className="mt-2 block text-[12px] font-semibold text-red-600 dark:text-red-400">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -361,6 +395,8 @@ export function LikertQuestion({
   onChange,
   leftAnchor = 'Strongly disagree',
   rightAnchor = 'Strongly agree',
+  error,
+  questionRef,
 }: {
   index: number;
   question: string;
@@ -368,9 +404,16 @@ export function LikertQuestion({
   onChange: (v: number) => void;
   leftAnchor?: string;
   rightAnchor?: string;
+  error?: string;
+  questionRef?: Ref<HTMLDivElement>;
 }) {
   return (
-    <div className="mb-5 rounded-[22px] bg-card p-4 sm:p-5">
+    <div
+      ref={questionRef}
+      tabIndex={-1}
+      aria-invalid={Boolean(error)}
+      className="mb-5 scroll-mt-24 rounded-[22px] bg-card p-4 outline-none sm:p-5"
+    >
       <p className="mb-4 flex gap-2.5 text-[14px] font-medium leading-snug sm:text-[15px]">
         <span className="shrink-0 font-bold text-primary">{index}.</span>
         <span>{question}</span>
@@ -382,6 +425,7 @@ export function LikertQuestion({
         rightAnchor={rightAnchor}
         name={question}
       />
+      {error && <p className="mt-3 text-[12px] font-semibold text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

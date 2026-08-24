@@ -56,12 +56,33 @@ const EMPTY_INTENT: PurchaseIntent = {
   q10_probabilityHigh: 0,
 };
 
-function newSessionId() {
-  return `S-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function slugPart(value: string, fallback: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 36) || fallback;
+}
+
+function participantSessionId(data: Demographics) {
+  const now = new Date();
+  const stamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+    '-',
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0'),
+    String(now.getMilliseconds()).padStart(3, '0'),
+  ].join('');
+  return `${slugPart(data.fullName, 'participant')}-${slugPart(data.age, 'age')}-${slugPart(data.gender, 'gender')}-${stamp}`;
 }
 
 export default function Home() {
-  const [sessionId, setSessionId] = useState(newSessionId);
+  const [sessionId, setSessionId] = useState('');
   const [stage, setStage] = useState(1);
   const [demographics, setDemographics] = useState<Demographics>(EMPTY_DEMOGRAPHICS);
   const [situation, setSituation] = useState<Situation | null>(null);
@@ -129,6 +150,14 @@ export default function Home() {
     if (!situation || !telemetry) return;
     setIntent(finalIntent);
     setSubmitting(true);
+    setSubmitNote('Finalising your response and session replay…');
+    advance(7);
+
+    // Capture the rendered thank-you state before closing the recorder.
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => window.setTimeout(resolve, 200)));
+    });
+    replayRef.current.addCustomEvent('thank_you_shown', { sessionId });
 
     const replay = await replayRef.current.finalize();
 
@@ -174,14 +203,13 @@ export default function Home() {
     }
 
     setSubmitting(false);
-    advance(7);
     confetti({ particleCount: 110, spread: 78, origin: { y: 0.6 } });
   };
 
   const resetAll = () => {
     replayRef.current.dispose();
     replayRef.current = new SessionReplayRecorder();
-    setSessionId(newSessionId());
+    setSessionId('');
     setStage(1);
     setDemographics(EMPTY_DEMOGRAPHICS);
     setSituation(null);
@@ -200,9 +228,12 @@ export default function Home() {
       {stage === 1 && (
         <DemographicsForm
           initialData={demographics}
+          onReplayConsent={() => replayRef.current.start()}
           onSubmit={(d) => {
+            const id = participantSessionId(d);
+            setSessionId(id);
+            replayRef.current.setSessionId(id);
             setDemographics(d);
-            void replayRef.current.start(sessionId).catch(() => undefined);
             advance(2);
           }}
         />
@@ -270,7 +301,7 @@ export default function Home() {
             </div>
 
             <div className="mt-4">
-              <PrimaryButton onClick={resetAll} tone="neutral">
+              <PrimaryButton onClick={resetAll} tone="neutral" disabled={submitting}>
                 <RotateCcw className="h-4 w-4" strokeWidth={3} />
                 Start a new session
               </PrimaryButton>

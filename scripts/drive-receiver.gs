@@ -219,6 +219,12 @@ function upsertGzipJson_(folder, name, value) {
   folder.createFile(zipped);
 }
 
+function upsertBinary_(folder, name, bytes, mimeType) {
+  var files = folder.getFilesByName(name);
+  while (files.hasNext()) files.next().setTrashed(true);
+  folder.createFile(Utilities.newBlob(bytes, mimeType, name));
+}
+
 function readJsonFile_(folder, name) {
   var files = folder.getFilesByName(name);
   if (!files.hasNext()) return null;
@@ -369,6 +375,29 @@ function saveReplayChunk_(payload) {
   return { ok: true, sessionId: sessionId, sequence: sequence, fileName: name };
 }
 
+function saveCompressedReplayChunk_(payload) {
+  var sessionId = safeName_(payload.sessionId);
+  var tabId = safeName_(payload.tabId);
+  var sequence = Number(payload.sequence);
+  if (!sessionId || !tabId || !isFinite(sequence) || !payload.compressedData) {
+    throw new Error('Malformed compressed replay chunk');
+  }
+
+  var bytes = Utilities.base64Decode(String(payload.compressedData));
+  var name = 'chunk-' + tabId + '-' + padSequence_(sequence) + '.json.gz';
+  var zipped = Utilities.newBlob(bytes, 'application/gzip', name);
+  var decoded = JSON.parse(Utilities.ungzip(zipped).getDataAsString());
+  if (decoded.sessionId !== sessionId || decoded.tabId !== tabId ||
+      Number(decoded.sequence) !== sequence || !Array.isArray(decoded.events) ||
+      decoded.events.length !== Number(payload.eventCount)) {
+    throw new Error('Compressed replay chunk metadata does not match');
+  }
+
+  var folder = replayFolder_(sessionId, true);
+  upsertBinary_(folder, name, bytes, 'application/gzip');
+  return { ok: true, sessionId: sessionId, sequence: sequence, fileName: name };
+}
+
 function saveReplayManifest_(payload) {
   var sessionId = safeName_(payload.sessionId);
   if (!sessionId) throw new Error('Invalid session id');
@@ -445,6 +474,19 @@ function replayChunk_(sessionId, fileName) {
   return chunk ? { ok: true, chunk: chunk } : { ok: false, error: 'Replay chunk not found' };
 }
 
+function replayChunks_(sessionId, fileNames) {
+  if (!Array.isArray(fileNames) || fileNames.length < 1 || fileNames.length > 10) {
+    return { ok: false, error: 'Request between 1 and 10 replay chunks' };
+  }
+  var chunks = [];
+  for (var i = 0; i < fileNames.length; i++) {
+    var result = replayChunk_(sessionId, fileNames[i]);
+    if (!result.ok) return result;
+    chunks.push(result.chunk);
+  }
+  return { ok: true, chunks: chunks };
+}
+
 function doPost(e) {
   var lock = LockService.getScriptLock();
   var locked = false;
@@ -463,11 +505,15 @@ function doPost(e) {
     if (action === 'replay_chunk_get') {
       return json_(replayChunk_(payload.sessionId, payload.fileName));
     }
+    if (action === 'replay_chunks_get') {
+      return json_(replayChunks_(payload.sessionId, payload.fileNames));
+    }
 
     lock.waitLock(30000);
     locked = true;
 
     if (action === 'replay_chunk') return json_(saveReplayChunk_(payload));
+    if (action === 'replay_chunk_compressed') return json_(saveCompressedReplayChunk_(payload));
     if (action === 'replay_complete') return json_(saveReplayManifest_(payload));
     if (action !== 'survey') return json_({ ok: false, error: 'Unknown action' });
 
@@ -488,7 +534,7 @@ function doGet() {
   return json_({
     ok: true,
     service: 'survey drive receiver',
-    replayVersion: 1,
+    replayVersion: 2,
     storageVersion: 2,
   });
 }

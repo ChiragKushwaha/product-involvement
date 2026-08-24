@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import type {
   AgeRange,
@@ -41,12 +41,22 @@ const FREQUENCY: readonly PurchaseFrequency[] = [
 export function DemographicsForm({
   initialData,
   onSubmit,
+  onReplayConsent,
 }: {
   initialData: Demographics;
   onSubmit: (d: Demographics) => void;
+  onReplayConsent: () => Promise<void>;
 }) {
   const [data, setData] = useState<Demographics>(initialData);
   const [replayConsent, setReplayConsent] = useState(false);
+  const [startingReplay, setStartingReplay] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const consentRef = useRef<HTMLLabelElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const ageRef = useRef<HTMLFieldSetElement>(null);
+  const genderRef = useRef<HTMLFieldSetElement>(null);
+  const educationRef = useRef<HTMLFieldSetElement>(null);
+  const frequencyRef = useRef<HTMLFieldSetElement>(null);
 
   const set = <K extends keyof Demographics>(key: K, value: Demographics[K]) =>
     setData((prev) => ({ ...prev, [key]: value }));
@@ -58,6 +68,23 @@ export function DemographicsForm({
     data.education !== '' &&
     data.onlinePurchaseFreq !== '' &&
     replayConsent;
+
+  const showFirstError = () => {
+    setAttempted(true);
+    const target = !replayConsent
+      ? consentRef.current
+      : !data.fullName.trim()
+        ? nameRef.current
+        : !data.age
+          ? ageRef.current
+          : !data.gender
+            ? genderRef.current
+            : !data.education
+              ? educationRef.current
+              : frequencyRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target?.focus(), 350);
+  };
 
   return (
     <Screen>
@@ -79,9 +106,9 @@ export function DemographicsForm({
           Search Survey
         </h1>
         <p className="text-[13px] font-medium leading-relaxed text-on-primary/75">
-          Responses are confidential and will be used solely for academic research. After this
-          page, the study records clicks, scrolling and page changes for session replay; it does
-          not record your screen, camera or activity on other websites.
+          Responses are confidential and will be used solely for academic research. With your
+          consent, this study records clicks, scrolling, answers and page changes on this website
+          for session replay. It never records your screen, camera or other websites.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-2">
           <ShieldCheck className="h-4 w-4" strokeWidth={2.5} />
@@ -91,64 +118,96 @@ export function DemographicsForm({
         </div>
       </div>
 
+      <label
+        ref={consentRef}
+        tabIndex={-1}
+        className="mb-6 flex scroll-mt-24 cursor-pointer items-start gap-3 rounded-2xl bg-card p-4 outline-none"
+      >
+        <input
+          type="checkbox"
+          checked={replayConsent}
+          disabled={startingReplay || replayConsent}
+          onChange={async (event) => {
+            if (!event.target.checked) return;
+            setStartingReplay(true);
+            await onReplayConsent().catch(() => undefined);
+            setReplayConsent(true);
+            setStartingReplay(false);
+          }}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+        />
+        <span className="text-[13px] leading-relaxed text-muted">
+          {startingReplay
+            ? 'Starting the privacy-masked session replay…'
+            : 'I consent to privacy-masked session replay, including the answers I enter on this website.'}
+          {attempted && !replayConsent && !startingReplay && (
+            <span className="mt-2 block font-semibold text-red-600 dark:text-red-400">
+              Consent is required before you can begin this research survey.
+            </span>
+          )}
+        </span>
+      </label>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (complete) onSubmit(data);
+          else showFirstError();
         }}
       >
-        <TextField
-          label="1.  Full name"
-          value={data.fullName}
-          onChange={(v) => set('fullName', v)}
-          placeholder="Enter your full name"
-        />
+        {replayConsent && (
+          <>
+            <TextField
+              label="1.  Full name"
+              value={data.fullName}
+              onChange={(v) => set('fullName', v)}
+              placeholder="Enter your full name"
+              inputRef={nameRef}
+              error={attempted && !data.fullName.trim() ? 'Please enter your full name.' : undefined}
+            />
 
-        <ChoiceGroup
-          label="2.  Age"
-          options={AGES}
-          value={data.age}
-          onChange={(v) => set('age', v)}
-          columns={2}
-        />
+            <ChoiceGroup
+              label="2.  Age"
+              options={AGES}
+              value={data.age}
+              onChange={(v) => set('age', v)}
+              columns={2}
+              groupRef={ageRef}
+              error={attempted && !data.age ? 'Please select your age.' : undefined}
+            />
 
-        <ChoiceGroup
-          label="3.  Gender"
-          options={GENDERS}
-          value={data.gender}
-          onChange={(v) => set('gender', v)}
-          columns={2}
-        />
+            <ChoiceGroup
+              label="3.  Gender"
+              options={GENDERS}
+              value={data.gender}
+              onChange={(v) => set('gender', v)}
+              columns={2}
+              groupRef={genderRef}
+              error={attempted && !data.gender ? 'Please select your gender.' : undefined}
+            />
 
-        <ChoiceGroup
-          label="4.  Educational level"
-          options={EDUCATION}
-          value={data.education}
-          onChange={(v) => set('education', v)}
-        />
+            <ChoiceGroup
+              label="4.  Educational level"
+              options={EDUCATION}
+              value={data.education}
+              onChange={(v) => set('education', v)}
+              groupRef={educationRef}
+              error={attempted && !data.education ? 'Please select your educational level.' : undefined}
+            />
 
-        <ChoiceGroup
-          label="5.  How often do you purchase products or services online?"
-          options={FREQUENCY}
-          value={data.onlinePurchaseFreq}
-          onChange={(v) => set('onlinePurchaseFreq', v)}
-        />
-
-        <label className="mb-2 flex cursor-pointer items-start gap-3 rounded-2xl bg-card p-4">
-          <input
-            type="checkbox"
-            checked={replayConsent}
-            onChange={(event) => setReplayConsent(event.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
-          />
-          <span className="text-[13px] leading-relaxed text-muted">
-            I consent to privacy-masked session replay for this research study. My name entry and
-            activity outside this website will not be included in the replay.
-          </span>
-        </label>
+            <ChoiceGroup
+              label="5.  How often do you purchase products or services online?"
+              options={FREQUENCY}
+              value={data.onlinePurchaseFreq}
+              onChange={(v) => set('onlinePurchaseFreq', v)}
+              groupRef={frequencyRef}
+              error={attempted && !data.onlinePurchaseFreq ? 'Please select a purchase frequency.' : undefined}
+            />
+          </>
+        )}
 
         <ActionBar>
-          <PrimaryButton type="submit" disabled={!complete}>
+          <PrimaryButton type="submit" disabled={!complete} onDisabledClick={showFirstError}>
             Proceed to videos
             <ArrowRight className="h-4 w-4" strokeWidth={3} />
           </PrimaryButton>

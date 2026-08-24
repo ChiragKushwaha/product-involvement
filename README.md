@@ -131,7 +131,7 @@ spreadsheet row is also retained as a convenient human-readable index:
 
 ```text
 participants/
-  <session-id>/
+  <name>-<age>-<gender>-<timestamp>/
     response.json
     replay/
       manifest.json
@@ -151,12 +151,15 @@ The receiver also supports event-only session replay. After updating
 source alone does not update an existing `/exec` deployment). Keep the same `/exec` URL
 and token in the app environment.
 
-The participant must consent before replay recording begins. The recorder starts only
-after the demographic screen, so the typed full name is not present in the replay. It
-captures this app's DOM changes, clicks, touch movement, scrolling and input events; it
-records only URL/timing annotations for external websites. Failed uploads are queued in
-IndexedDB and retried. Researchers can open `/replays?token=<ADMIN_TOKEN>` or use the
-**Session replays** link on the dashboard.
+The participant must consent before replay recording begins. Demographic fields appear
+only after consent, so name, age, gender and the other entered answers are included in
+the replay together with the final thank-you screen. It captures this app's DOM changes,
+clicks, touch movement, scrolling and input events; it records only URL/timing annotations
+for external websites. Replay chunks are packed and gzip-compressed before transport,
+then stored as `.json.gz` files. Failed uploads are queued in IndexedDB and retried.
+Researchers can open `/replays?token=<ADMIN_TOKEN>` or use the **Session replays** link
+on the dashboard; the player includes fast playback, timeline seeking and per-participant
+CSV/JSON downloads.
 
 If Drive is temporarily unavailable, the completed response remains in the browser's
 local backup and replay chunks remain in IndexedDB for retry. The Drive receiver is

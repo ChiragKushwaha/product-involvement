@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { PurchaseIntent, Situation } from '@/types/survey';
 import {
@@ -43,7 +43,16 @@ export function FinalIntentForm({
   onSubmit: (intent: PurchaseIntent) => void;
 }) {
   const [intent, setIntent] = useState<PurchaseIntent>(initialIntent);
+  const [attempted, setAttempted] = useState(false);
+  const questionRefs = useRef(new Map<keyof PurchaseIntent, HTMLDivElement>());
   const complete = QUESTIONS.every((q) => intent[q.key] > 0);
+  const showFirstMissing = () => {
+    setAttempted(true);
+    const missing = QUESTIONS.find((question) => intent[question.key] === 0);
+    const target = missing ? questionRefs.current.get(missing.key) : undefined;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target?.focus(), 350);
+  };
 
   return (
     <Screen>
@@ -70,12 +79,18 @@ export function FinalIntentForm({
           question={q.text}
           value={intent[q.key]}
           onChange={(v) => setIntent((prev) => ({ ...prev, [q.key]: v }))}
+          questionRef={(node) => {
+            if (node) questionRefs.current.set(q.key, node);
+            else questionRefs.current.delete(q.key);
+          }}
+          error={attempted && intent[q.key] === 0 ? 'Please choose a rating.' : undefined}
         />
       ))}
 
       <ActionBar>
         <PrimaryButton
           disabled={!complete || submitting}
+          onDisabledClick={!submitting ? showFirstMissing : undefined}
           onClick={() => onSubmit(intent)}
         >
           {submitting ? 'Submitting…' : 'Submit responses'}

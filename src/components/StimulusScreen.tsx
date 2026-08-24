@@ -85,6 +85,9 @@ export function StimulusScreen({
   const [rewatchCount, setRewatchCount] = useState(0);
   const [replayToken, setReplayToken] = useState(0);
   const [adEnded, setAdEnded] = useState(false);
+  const [attemptedFeedback, setAttemptedFeedback] = useState(false);
+  const [attemptedFamiliarity, setAttemptedFamiliarity] = useState(false);
+  const questionRefs = useRef(new Map<keyof AdFeedback, HTMLDivElement>());
 
   // Watch time accumulates across plays; the player restarts at 0 each replay.
   const playbackRef = useRef<AdPlayback>({ watchedSec: 0, completed: false });
@@ -126,6 +129,15 @@ export function StimulusScreen({
 
   const adFeedbackComplete = AD_FEEDBACK_QUESTIONS.every((q) => feedback[q.key] > 0);
   const familiarityComplete = FAMILIARITY_QUESTIONS.every((q) => feedback[q.key] > 0);
+
+  const showFirstMissing = (questions: { key: keyof AdFeedback }[], familiarity: boolean) => {
+    if (familiarity) setAttemptedFamiliarity(true);
+    else setAttemptedFeedback(true);
+    const missing = questions.find((question) => feedback[question.key] === 0);
+    const target = missing ? questionRefs.current.get(missing.key) : undefined;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => target?.focus(), 350);
+  };
 
   /* ------------------------------------------------------------ the ad */
 
@@ -209,12 +221,18 @@ export function StimulusScreen({
             question={q.text}
             value={feedback[q.key]}
             onChange={(v) => setFeedback((prev) => ({ ...prev, [q.key]: v }))}
+            questionRef={(node) => {
+              if (node) questionRefs.current.set(q.key, node);
+              else questionRefs.current.delete(q.key);
+            }}
+            error={attemptedFamiliarity && feedback[q.key] === 0 ? 'Please choose a rating.' : undefined}
           />
         ))}
 
         <ActionBar>
           <PrimaryButton
             disabled={!familiarityComplete}
+            onDisabledClick={() => showFirstMissing(FAMILIARITY_QUESTIONS, true)}
             onClick={() => {
               const extra =
                 enteredAtRef.current !== null ? (Date.now() - enteredAtRef.current) / 1000 : 0;
@@ -266,11 +284,20 @@ export function StimulusScreen({
           question={q.text}
           value={feedback[q.key]}
           onChange={(v) => setFeedback((prev) => ({ ...prev, [q.key]: v }))}
+          questionRef={(node) => {
+            if (node) questionRefs.current.set(q.key, node);
+            else questionRefs.current.delete(q.key);
+          }}
+          error={attemptedFeedback && feedback[q.key] === 0 ? 'Please choose a rating.' : undefined}
         />
       ))}
 
       <ActionBar>
-        <PrimaryButton disabled={!adFeedbackComplete} onClick={() => setPhase('familiarity')}>
+        <PrimaryButton
+          disabled={!adFeedbackComplete}
+          onDisabledClick={() => showFirstMissing(AD_FEEDBACK_QUESTIONS, false)}
+          onClick={() => setPhase('familiarity')}
+        >
           Continue
           <ArrowRight className="h-4 w-4" strokeWidth={3} />
         </PrimaryButton>

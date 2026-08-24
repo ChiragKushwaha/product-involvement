@@ -1,4 +1,4 @@
-import { getDriveReplayChunk, getDriveReplaySession } from '@/lib/drive-replays';
+import { getDriveReplayChunk, getDriveReplayChunks, getDriveReplaySession } from '@/lib/drive-replays';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,12 +20,21 @@ export async function GET(
   }
 
   const { sessionId } = await context.params;
-  if (!/^S-[a-zA-Z0-9-]{8,80}$/.test(sessionId)) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{7,119}$/.test(sessionId)) {
     return Response.json({ ok: false, error: 'Invalid session id' }, { status: 400 });
   }
 
   try {
-    const fileName = new URL(request.url).searchParams.get('chunk');
+    const url = new URL(request.url);
+    const fileNames = url.searchParams.getAll('chunk');
+    if (fileNames.length > 1) {
+      if (fileNames.length > 10) {
+        return Response.json({ ok: false, error: 'Too many chunks requested' }, { status: 400 });
+      }
+      const chunks = await getDriveReplayChunks(sessionId, fileNames);
+      return Response.json({ ok: true, chunks });
+    }
+    const fileName = fileNames[0];
     if (fileName) {
       const events = await getDriveReplayChunk(sessionId, fileName);
       return Response.json({ ok: true, events });
