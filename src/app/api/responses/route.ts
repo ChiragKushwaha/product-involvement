@@ -18,6 +18,17 @@ async function forwardToDrive(session: CompleteSurveySession) {
     : { forwarded: false, reason: result.error ?? 'Drive write failed' };
 }
 
+async function responseAlreadyInDrive(sessionId: string) {
+  try {
+    const sessions = await listDriveSessions();
+    return sessions.some((session) => session.sessionId === sessionId);
+  } catch {
+    // Reconciliation is an optimisation for an ambiguous earlier upload. If
+    // Drive cannot be read, continue with the normal idempotent upsert.
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   let session: CompleteSurveySession;
   try {
@@ -33,6 +44,21 @@ export async function POST(request: Request) {
     !session?.telemetry
   ) {
     return Response.json({ ok: false, error: 'Malformed session payload' }, { status: 400 });
+  }
+
+  // Apps Script can finish the Drive write after the browser or server has
+  // timed out waiting for its acknowledgement. On a retry, confirm whether
+  // the response is already visible in Drive and clear the durable queue
+  // without doing another slow write.
+  if (
+    request.headers.get('x-response-retry') === '1' &&
+    await responseAlreadyInDrive(session.sessionId)
+  ) {
+    return Response.json({
+      ok: true,
+      sessionId: session.sessionId,
+      drive: { forwarded: true, reconciled: true },
+    });
   }
 
   const drive = await forwardToDrive(session);

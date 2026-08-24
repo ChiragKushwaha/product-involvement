@@ -161,10 +161,11 @@ export function ReplayPlayer({
 
   useEffect(() => {
     if (!rootRef.current || events.length === 0) return;
+    const root = rootRef.current;
     setPlayerReady(false);
-    rootRef.current.replaceChildren();
+    root.replaceChildren();
     const replayer = new Replayer(events, {
-      root: rootRef.current,
+      root,
       unpackFn: replayDecoder(manifest?.startedAt),
       skipInactive: true,
       speed: 4,
@@ -178,6 +179,35 @@ export function ReplayPlayer({
     // Build the initial full snapshot immediately. Previously this happened
     // only after seeking, which made the first Play click appear unresponsive.
     replayer.pause(0);
+
+    const fitReplayToContainer = () => {
+      const wrapper = root.querySelector<HTMLElement>('.replayer-wrapper');
+      const iframe = wrapper?.querySelector<HTMLIFrameElement>('iframe');
+      if (!wrapper || !iframe) return;
+
+      const recordedWidth = Number(iframe.getAttribute('width')) || iframe.offsetWidth;
+      const recordedHeight = Number(iframe.getAttribute('height')) || iframe.offsetHeight;
+      if (!recordedWidth || !recordedHeight || !root.clientWidth) return;
+
+      const scale = Math.min(1, root.clientWidth / recordedWidth);
+      const scaledWidth = recordedWidth * scale;
+      wrapper.style.position = 'absolute';
+      wrapper.style.top = '0';
+      wrapper.style.left = `${Math.max(0, (root.clientWidth - scaledWidth) / 2)}px`;
+      wrapper.style.width = `${recordedWidth}px`;
+      wrapper.style.height = `${recordedHeight}px`;
+      wrapper.style.transformOrigin = 'top left';
+      wrapper.style.transform = `scale(${scale})`;
+      root.style.height = `${Math.ceil(recordedHeight * scale)}px`;
+    };
+
+    const resizeObserver = new ResizeObserver(fitReplayToContainer);
+    resizeObserver.observe(root);
+    const iframe = root.querySelector<HTMLIFrameElement>('.replayer-wrapper iframe');
+    if (iframe) resizeObserver.observe(iframe);
+    const attributeObserver = new MutationObserver(fitReplayToContainer);
+    if (iframe) attributeObserver.observe(iframe, { attributes: true, attributeFilter: ['width', 'height'] });
+    const animationFrame = requestAnimationFrame(fitReplayToContainer);
 
     const start = () => setPlaying(true);
     const pause = () => setPlaying(false);
@@ -197,6 +227,9 @@ export function ReplayPlayer({
       }
     }, 150);
     return () => {
+      cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      attributeObserver.disconnect();
       window.clearInterval(timer);
       replayer.off('start', start);
       replayer.off('pause', pause);
@@ -320,22 +353,22 @@ export function ReplayPlayer({
       )}
 
       <div className={events.length ? 'block' : 'hidden'}>
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-[18px] bg-card p-2.5">
+        <div className="mb-3 grid grid-cols-2 gap-2 rounded-[18px] bg-card p-2.5 sm:flex sm:flex-wrap sm:items-center">
           <button
             onClick={togglePlayback}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-[13px] font-bold text-on-primary"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 text-[13px] font-bold text-on-primary sm:px-5"
           >
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             {playing ? 'Pause' : 'Play'}
           </button>
           <button
             onClick={restart}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-well px-4 text-[13px] font-semibold text-muted"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-well px-4 text-[13px] font-semibold text-muted"
           >
             <RotateCcw className="h-4 w-4" />
             Restart
           </button>
-          <label className="ml-auto flex items-center gap-2 text-[12px] font-semibold text-faint">
+          <label className="col-span-2 flex items-center justify-between gap-2 text-[12px] font-semibold text-faint sm:ml-auto">
             Speed
             <select
               value={speed}
@@ -345,8 +378,8 @@ export function ReplayPlayer({
               {[1, 2, 4, 8, 16].map((value) => <option key={value} value={value}>{value}×</option>)}
             </select>
           </label>
-          <div className="flex basis-full items-center gap-3 px-2 pb-1 pt-1">
-            <span className="w-10 text-right text-[11px] font-semibold tabular-nums text-faint">
+          <div className="col-span-2 flex min-w-0 basis-full items-center gap-2 px-1 pb-1 pt-1 sm:gap-3 sm:px-2">
+            <span className="w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums text-faint sm:w-10">
               {formatTime(currentTime)}
             </span>
             <input
@@ -370,13 +403,13 @@ export function ReplayPlayer({
               aria-label="Session replay timeline"
               className="h-2 min-w-0 flex-1 cursor-pointer accent-primary"
             />
-            <span className="w-10 text-[11px] font-semibold tabular-nums text-faint">
+            <span className="w-9 shrink-0 text-[11px] font-semibold tabular-nums text-faint sm:w-10">
               {formatTime(duration)}
             </span>
           </div>
         </div>
-        <div className="overflow-auto rounded-[22px] bg-card p-2 sm:p-4">
-          <div ref={rootRef} className="min-h-[420px] min-w-[360px]" />
+        <div className="overflow-hidden rounded-[22px] bg-card p-2 sm:p-4">
+          <div ref={rootRef} className="relative w-full overflow-hidden" />
         </div>
       </div>
     </main>

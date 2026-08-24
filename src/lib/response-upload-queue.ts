@@ -193,7 +193,12 @@ async function send(item: PendingResponse) {
   try {
     const response = await fetch('/api/responses', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // A timed-out request may still have completed in Apps Script. Tell
+        // the API to reconcile retries with Drive before writing it again.
+        'X-Response-Retry': item.attempts > 0 ? '1' : '0',
+      },
       body: JSON.stringify(item.session),
       signal: AbortSignal.timeout(25_000),
     });
@@ -259,6 +264,16 @@ export function startResponseUploadRecovery(listener: Listener) {
     window.addEventListener('online', drainResponseQueue);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) void drainResponseQueue();
+    });
+    navigator.serviceWorker?.addEventListener('message', (event) => {
+      if (
+        event.data?.type !== 'product-involvement-response-uploaded' ||
+        typeof event.data.sessionId !== 'string'
+      ) return;
+      const sessionId = event.data.sessionId;
+      beaconPayloads.delete(sessionId);
+      void removeEverywhere(sessionId);
+      notify({ sessionId, state: 'uploaded', attempts: 0 });
     });
     window.addEventListener('pagehide', () => {
       beaconPayloads.forEach((session) => {

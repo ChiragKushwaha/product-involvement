@@ -7,6 +7,17 @@ const REPLAY_DB_NAME = 'product-involvement-replay';
 const REPLAY_STORE = 'upload_queue';
 const SYNC_TAG = 'product-involvement-response-upload';
 
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+async function notifyResponseUploaded(sessionId) {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  windows.forEach((client) => client.postMessage({
+    type: 'product-involvement-response-uploaded',
+    sessionId,
+  }));
+}
+
 function request(operation) {
   return new Promise((resolve, reject) => {
     operation.onsuccess = () => resolve(operation.result);
@@ -60,12 +71,16 @@ async function uploadPendingResponses() {
     try {
       const response = await fetch('/api/responses', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Response-Retry': item.attempts > 0 ? '1' : '0',
+        },
         body: JSON.stringify(item.session),
       });
       const result = await response.json();
       if (!response.ok || !result?.ok || !result?.drive?.forwarded) throw new Error('Drive did not confirm');
       await removeResponse(item.sessionId);
+      await notifyResponseUploaded(item.sessionId);
     } catch {
       failed = true;
     }

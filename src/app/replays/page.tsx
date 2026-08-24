@@ -94,7 +94,7 @@ export default async function ReplaysPage({
             <Link
               key={session.sessionId}
               href={href}
-              className="flex items-center gap-4 rounded-[20px] bg-card p-4 transition hover:bg-well"
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 rounded-[20px] bg-card p-3.5 transition hover:bg-well sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4 sm:p-4"
             >
               <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
                 <Play className="h-4 w-4" />
@@ -110,8 +110,8 @@ export default async function ReplaysPage({
                   {session.completedAt ? new Date(session.completedAt).toLocaleString('en-IN') : 'Completed'}
                 </span>
               </span>
-              <span className="text-right text-[11px] font-semibold text-faint">
-                {session.eventCount.toLocaleString()} events<br />{session.chunkCount} chunks
+              <span className="col-start-2 text-[11px] font-semibold text-faint sm:col-start-auto sm:text-right">
+                {session.eventCount.toLocaleString()} events · {session.chunkCount} chunks
               </span>
             </Link>
           );
