@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic';
  * study's Drive folder. Configure SURVEY_WEBHOOK_URL — see scripts/drive-receiver.gs.
  */
 async function forwardToDrive(session: CompleteSurveySession) {
-  const result = await callDriveWebhook('survey', { session }, 60_000);
+  // Fail fast into the browser's durable retry queue instead of holding every
+  // participant request open while Apps Script is saturated.
+  const result = await callDriveWebhook('survey', { session }, 15_000);
   return result.ok
     ? { forwarded: true }
     : { forwarded: false, reason: result.error ?? 'Drive write failed' };

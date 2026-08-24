@@ -168,19 +168,19 @@ export class SessionReplayRecorder {
   private async startRecording() {
     if (typeof window === 'undefined' || !('indexedDB' in window)) return;
 
-    const [{ record }, { pack }] = await Promise.all([
-      import('@rrweb/record'),
-      import('@rrweb/packer'),
-    ]);
+    const { record } = await import('@rrweb/record');
 
-    const stop = record<string>({
+    const stop = record({
       emit: (event) => {
-        this.buffer.push(event);
-        this.bufferedChars += event.length;
+        // Store valid JSON text. rrweb's binary packed strings do not survive
+        // every Apps Script/Drive Unicode round-trip reliably; whole-chunk
+        // gzip still provides the bandwidth and storage compression.
+        const serialised = JSON.stringify(event);
+        this.buffer.push(serialised);
+        this.bufferedChars += serialised.length;
         this.eventCount += 1;
         if (this.bufferedChars >= MAX_BUFFER_CHARS) void this.flush();
       },
-      packFn: pack,
       checkoutEveryNms: 5 * 60 * 1000,
       blockSelector: '[data-replay-block]',
       ignoreSelector: '[data-replay-ignore]',
@@ -349,7 +349,12 @@ export class SessionReplayRecorder {
     // will also be recovered when a later participant begins a session.
     if (pending) {
       window.addEventListener('online', this.onOnline);
-      this.flushTimer = setInterval(() => void this.drainQueue(), 30_000);
+      const retry = () => {
+        void this.drainQueue().finally(() => {
+          this.flushTimer = setTimeout(retry, 20_000 + Math.random() * 40_000);
+        });
+      };
+      this.flushTimer = setTimeout(retry, 20_000 + Math.random() * 40_000);
     }
 
     return {

@@ -155,14 +155,17 @@ The participant must consent before replay recording begins. Demographic fields 
 only after consent, so name, age, gender and the other entered answers are included in
 the replay together with the final thank-you screen. It captures this app's DOM changes,
 clicks, touch movement, scrolling and input events; it records only URL/timing annotations
-for external websites. Replay chunks are packed and gzip-compressed before transport,
-then stored as `.json.gz` files. Failed uploads are queued in IndexedDB and retried.
+for external websites. Replay chunks are gzip-compressed before transport, then stored
+as `.json.gz` files. Failed response and replay uploads are persisted in the browser and
+retried automatically with backoff while the page is open, when connectivity returns,
+through browser background sync where supported, and on a later visit.
 Researchers can open `/replays?token=<ADMIN_TOKEN>` or use the **Session replays** link
 on the dashboard; the player includes fast playback, timeline seeking and per-participant
 CSV/JSON downloads.
 
-If Drive is temporarily unavailable, the completed response remains in the browser's
-local backup and replay chunks remain in IndexedDB for retry. The Drive receiver is
+If Drive is temporarily busy, the thank-you page reports that automatic sync is in
+progress. The completed response is queued in IndexedDB (with a local-storage fallback),
+and a final background send is attempted when the page closes. The Drive receiver is
 required for the shared dashboard and exports.
 
 ### Exports

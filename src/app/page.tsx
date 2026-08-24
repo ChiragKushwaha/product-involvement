@@ -14,6 +14,10 @@ import { PrimaryButton, Screen } from '@/components/ui';
 
 import { TelemetryCollector } from '@/lib/telemetry-tracker';
 import { appendLocalSession } from '@/lib/local-store';
+import {
+  queueSurveyResponse,
+  startResponseUploadRecovery,
+} from '@/lib/response-upload-queue';
 import { SessionReplayRecorder } from '@/lib/session-replay';
 import type {
   AdFeedback,
@@ -102,8 +106,21 @@ export default function Home() {
 
   const [collector, setCollector] = useState(() => new TelemetryCollector());
   const replayRef = useRef(new SessionReplayRecorder());
+  const activeSessionIdRef = useRef('');
 
   useEffect(() => () => replayRef.current.dispose(), []);
+  useEffect(() => startResponseUploadRecovery((status) => {
+    if (status.sessionId !== activeSessionIdRef.current) return;
+    if (status.state === 'uploading') {
+      setSubmitNote('Saving your response to the study Drive folder…');
+    } else if (status.state === 'uploaded') {
+      setSubmitNote('Response saved to Drive. Replay files are syncing automatically.');
+    } else if (status.attempts > 0) {
+      setSubmitNote('Drive is busy. Your response is secured and will retry automatically.');
+    } else {
+      setSubmitNote('Response secured. Syncing to Drive automatically…');
+    }
+  }), []);
 
   const toTop = () => window.scrollTo({ top: 0 });
 
@@ -184,23 +201,14 @@ export default function Home() {
     // Local copy first, so a network failure can never lose the response.
     appendLocalSession(session);
 
-    try {
-      const res = await fetch('/api/responses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(session),
-      });
-      const data = await res.json();
-      setSubmitNote(
-        data?.drive?.forwarded && replay.status === 'uploaded'
-          ? 'Response and session replay saved to the study Drive folder.'
-          : data?.drive?.forwarded
-            ? 'Response saved to Drive. The replay upload will retry automatically.'
-            : 'Drive is unavailable. A backup remains on this device for manual export.',
-      );
-    } catch {
-      setSubmitNote('Saved on this device. It will need exporting manually.');
-    }
+    const uploaded = await queueSurveyResponse(session);
+    setSubmitNote(
+      uploaded && replay.status === 'uploaded'
+        ? 'Response and session replay saved to the study Drive folder.'
+        : uploaded
+          ? 'Response saved to Drive. Replay files are syncing automatically.'
+          : 'Response secured. Drive is busy, so automatic retry is in progress.',
+    );
 
     setSubmitting(false);
     confetti({ particleCount: 110, spread: 78, origin: { y: 0.6 } });
@@ -209,6 +217,7 @@ export default function Home() {
   const resetAll = () => {
     replayRef.current.dispose();
     replayRef.current = new SessionReplayRecorder();
+    activeSessionIdRef.current = '';
     setSessionId('');
     setStage(1);
     setDemographics(EMPTY_DEMOGRAPHICS);
@@ -231,6 +240,7 @@ export default function Home() {
           onReplayConsent={() => replayRef.current.start()}
           onSubmit={(d) => {
             const id = participantSessionId(d);
+            activeSessionIdRef.current = id;
             setSessionId(id);
             replayRef.current.setSessionId(id);
             setDemographics(d);

@@ -1,4 +1,9 @@
-import { getDriveReplayChunk, getDriveReplayChunks, getDriveReplaySession } from '@/lib/drive-replays';
+import {
+  getDriveFullReplay,
+  getDriveReplayChunk,
+  getDriveReplayChunks,
+  getDriveReplaySession,
+} from '@/lib/drive-replays';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +31,10 @@ export async function GET(
 
   try {
     const url = new URL(request.url);
+    if (url.searchParams.get('full') === '1') {
+      const replay = await getDriveFullReplay(sessionId);
+      return Response.json({ ok: true, ...replay });
+    }
     const fileNames = url.searchParams.getAll('chunk');
     if (fileNames.length > 1) {
       if (fileNames.length > 10) {

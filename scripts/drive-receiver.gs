@@ -478,13 +478,51 @@ function replayChunks_(sessionId, fileNames) {
   if (!Array.isArray(fileNames) || fileNames.length < 1 || fileNames.length > 10) {
     return { ok: false, error: 'Request between 1 and 10 replay chunks' };
   }
-  var chunks = [];
+  var folder = replayFolder_(sessionId, false);
+  if (!folder) return { ok: false, error: 'Replay not found' };
+  var requested = {};
   for (var i = 0; i < fileNames.length; i++) {
-    var result = replayChunk_(sessionId, fileNames[i]);
-    if (!result.ok) return result;
-    chunks.push(result.chunk);
+    var safeFile = String(fileNames[i] || '');
+    if (!/^chunk-[a-zA-Z0-9_-]+-[0-9]{6}\.json\.gz$/.test(safeFile)) {
+      return { ok: false, error: 'Replay chunk not found' };
+    }
+    requested[safeFile] = null;
+  }
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    var name = file.getName();
+    if (Object.prototype.hasOwnProperty.call(requested, name)) {
+      requested[name] = JSON.parse(Utilities.ungzip(file.getBlob()).getDataAsString());
+    }
+  }
+  var chunks = [];
+  for (var j = 0; j < fileNames.length; j++) {
+    if (!requested[fileNames[j]]) return { ok: false, error: 'Replay chunk not found' };
+    chunks.push(requested[fileNames[j]]);
   }
   return { ok: true, chunks: chunks };
+}
+
+function replayFull_(sessionId) {
+  var folder = replayFolder_(sessionId, false);
+  if (!folder) return { ok: false, error: 'Replay not found' };
+  var manifest = readJsonFile_(folder, 'manifest.json');
+  var files = folder.getFiles();
+  var chunks = [];
+  while (files.hasNext()) {
+    var file = files.next();
+    var name = file.getName();
+    if (!/^chunk-[a-zA-Z0-9_-]+-[0-9]{6}\.json\.gz$/.test(name)) continue;
+    var match = name.match(/-([0-9]{6})\.json\.gz$/);
+    var chunk = JSON.parse(Utilities.ungzip(file.getBlob()).getDataAsString());
+    chunks.push({
+      sequence: match ? Number(match[1]) : Number(chunk.sequence) || 0,
+      events: Array.isArray(chunk.events) ? chunk.events : [],
+    });
+  }
+  chunks.sort(function (a, b) { return a.sequence - b.sequence; });
+  return { ok: true, manifest: manifest, chunks: chunks };
 }
 
 function doPost(e) {
@@ -508,12 +546,17 @@ function doPost(e) {
     if (action === 'replay_chunks_get') {
       return json_(replayChunks_(payload.sessionId, payload.fileNames));
     }
+    if (action === 'replay_full_get') return json_(replayFull_(payload.sessionId));
+
+    // Replay chunks belong to unique participant/sequence files. They do not
+    // touch master-data.json, so a global script lock would only serialize and
+    // throttle otherwise independent uploads.
+    if (action === 'replay_chunk') return json_(saveReplayChunk_(payload));
+    if (action === 'replay_chunk_compressed') return json_(saveCompressedReplayChunk_(payload));
 
     lock.waitLock(30000);
     locked = true;
 
-    if (action === 'replay_chunk') return json_(saveReplayChunk_(payload));
-    if (action === 'replay_chunk_compressed') return json_(saveCompressedReplayChunk_(payload));
     if (action === 'replay_complete') return json_(saveReplayManifest_(payload));
     if (action !== 'survey') return json_({ ok: false, error: 'Unknown action' });
 
@@ -534,7 +577,7 @@ function doGet() {
   return json_({
     ok: true,
     service: 'survey drive receiver',
-    replayVersion: 2,
+    replayVersion: 3,
     storageVersion: 2,
   });
 }

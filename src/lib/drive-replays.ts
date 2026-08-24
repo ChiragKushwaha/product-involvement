@@ -67,3 +67,26 @@ export async function getDriveReplayChunks(
     };
   });
 }
+
+export async function getDriveFullReplay(sessionId: string): Promise<{
+  manifest: ReplayManifest;
+  chunks: { sequence: number; events: string[] }[];
+}> {
+  const result = await callDriveWebhook('replay_full_get', { sessionId }, 60_000);
+  if (!result.ok || !result.manifest || !Array.isArray(result.chunks)) {
+    throw new Error(result.error ?? 'Full replay not found');
+  }
+  return {
+    manifest: result.manifest as ReplayManifest,
+    chunks: result.chunks.map((chunk) => {
+      const item = chunk as { sequence?: unknown; events?: unknown };
+      if (!Number.isInteger(item.sequence) || !Array.isArray(item.events)) {
+        throw new Error('Drive returned malformed full replay data');
+      }
+      return {
+        sequence: Number(item.sequence),
+        events: item.events.filter((event): event is string => typeof event === 'string'),
+      };
+    }),
+  };
+}

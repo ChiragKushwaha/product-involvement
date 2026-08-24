@@ -33,6 +33,25 @@ function groupsOf<T>(items: T[], size: number) {
   return groups;
 }
 
+function replayDecoder(startedAt?: string) {
+  let lastTimestamp = startedAt ? Date.parse(startedAt) : Date.now();
+  return (event: string) => {
+    try {
+      const decoded = event.startsWith('{') ? JSON.parse(event) : unpack(event);
+      if (Number.isFinite(decoded.timestamp)) lastTimestamp = decoded.timestamp;
+      return decoded;
+    } catch {
+      // A single damaged legacy event should not make an otherwise complete
+      // replay unwatchable. New recordings use text-safe JSON events.
+      return {
+        type: 5,
+        timestamp: lastTimestamp,
+        data: { tag: 'replay_event_unavailable', payload: null },
+      };
+    }
+  };
+}
+
 export function ReplayPlayer({
   sessionId,
   token,
@@ -59,14 +78,30 @@ export function ReplayPlayer({
       setError(null);
       try {
         const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
+        const fullParams = new URLSearchParams({ full: '1' });
+        if (token) fullParams.set('token', token);
+        const fullResponse = await fetch(
+          `/api/replays/${encodeURIComponent(sessionId)}?${fullParams.toString()}`,
+        );
+        const full = await fullResponse.json();
+        if (fullResponse.ok && full?.ok && Array.isArray(full.chunks)) {
+          const chunks = full.chunks as { sequence: number; events: string[] }[];
+          chunks.sort((a, b) => a.sequence - b.sequence);
+          if (!cancelled) {
+            setManifest(full.manifest as ReplayManifest);
+            setEvents(chunks.flatMap((chunk) => chunk.events));
+          }
+          return;
+        }
+
         const metaResponse = await fetch(`/api/replays/${encodeURIComponent(sessionId)}${tokenQuery}`);
         const meta = await metaResponse.json();
         if (!metaResponse.ok || !meta?.ok) throw new Error(meta?.error ?? 'Replay not found');
 
         const descriptors = meta.chunks as ReplayChunkDescriptor[];
         const batches = await loadWithConcurrency(
-          groupsOf(descriptors, 8),
-          2,
+          groupsOf(descriptors, 2),
+          3,
           async (batch) => {
             const params = new URLSearchParams();
             batch.forEach((descriptor) => params.append('chunk', descriptor.fileName));
@@ -124,7 +159,7 @@ export function ReplayPlayer({
     rootRef.current.replaceChildren();
     const replayer = new Replayer(events, {
       root: rootRef.current,
-      unpackFn: unpack,
+      unpackFn: replayDecoder(manifest?.startedAt),
       skipInactive: true,
       speed: 4,
       mouseTail: { duration: 400, lineWidth: 2, strokeStyle: '#5951d8' },
@@ -149,7 +184,7 @@ export function ReplayPlayer({
       replayer.destroy();
       replayerRef.current = null;
     };
-  }, [events]);
+  }, [events, manifest?.startedAt]);
 
   const togglePlayback = () => {
     const replayer = replayerRef.current;
