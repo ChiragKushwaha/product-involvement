@@ -31,6 +31,7 @@ import { ACCENT_BG, ACCENT_ON, ThemeToggle, cx } from '@/components/ui';
 
 /** Scroll events within this window belong to the same gesture (one CT1 action). */
 const GESTURE_MS = 350;
+const USE_CHATBASE_AI = true;
 
 function useScrollTracker(collector: TelemetryCollector, channel: Channel, sourceId?: string) {
   const lastActionRef = useRef(0);
@@ -519,7 +520,7 @@ export function SearchInterface({
       </div>
 
       {/* -------------------------------------------------- prompt + nav */}
-      {channel === 'Conversational AI' && !open && (
+      {channel === 'Conversational AI' && !open && !USE_CHATBASE_AI && (
         <div className="mx-auto w-full max-w-md shrink-0 px-4 pb-2 pt-2 lg:max-w-6xl lg:px-8">
           <form
             onSubmit={(e) => {
@@ -813,6 +814,28 @@ function AiChannel({
   onScroll: (e: UIEvent<HTMLElement>) => void;
   endRef: RefObject<HTMLDivElement | null>;
 }) {
+  if (USE_CHATBASE_AI) {
+    return (
+      <div className="flex h-full min-h-[520px] flex-col pb-2">
+        <button
+          onClick={onBack}
+          className="mb-3 flex h-10 shrink-0 items-center gap-2 self-start rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
+        >
+          <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+          All options
+        </button>
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[22px] bg-card">
+          <iframe
+            allow="microphone"
+            title="Ask AI"
+            src="https://www.chatbase.co/chatbot-iframe/kIPeAJ4dLUiUr1BUMU-XU?theme=dark"
+            className="absolute inset-0 flex h-full w-full border-0"
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div onScroll={onScroll} className="pb-4">
       <button

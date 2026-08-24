@@ -99,8 +99,8 @@ export function DemographicsForm({
         </h1>
         <p className="text-[13px] font-medium leading-relaxed text-on-primary/75">
           Responses are confidential and will be used solely for academic research. This study
-          records clicks, scrolling, entered answers, searches, AI chats and page changes on this
-          website for session replay. It never records your screen, camera or other websites.
+          records clicks, scrolling, entered answers, searches and page changes on this website
+          for session replay. It never records your screen, camera or other websites.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-2">
           <ShieldCheck className="h-4 w-4" strokeWidth={2.5} />

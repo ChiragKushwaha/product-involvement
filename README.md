@@ -151,12 +151,13 @@ The receiver also supports event-only session replay. After updating
 source alone does not update an existing `/exec` deployment). Keep the same `/exec` URL
 and token in the app environment.
 
-Replay recording begins automatically when the survey opens. Name, age, gender, searches,
-AI prompts and responses, and every other entered answer remain visible in the replay,
+Replay recording begins automatically when the survey opens. Name, age, gender, native
+Google searches and every other entered survey answer remain visible in the replay,
 together with the final thank-you screen. It captures this app's DOM changes, clicks,
 touch movement, scrolling and input events; it records only URL/timing annotations for
-external websites. The Google and AI channels use native in-app interfaces so their full
-interaction is reconstructable. Replay chunks are gzip-compressed before transport, then stored
+external websites. The restored Chatbase AI is a cross-origin iframe, so browser security
+prevents its internal prompts and responses from being reconstructed. Replay chunks are
+gzip-compressed before transport, then stored
 as `.json.gz` files. Failed response and replay uploads are persisted in the browser and
 retried automatically with backoff while the page is open, when connectivity returns,
 through browser background sync where supported, and on a later visit.

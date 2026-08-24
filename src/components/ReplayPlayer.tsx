@@ -62,11 +62,13 @@ export function ReplayPlayer({
   const rootRef = useRef<HTMLDivElement>(null);
   const replayerRef = useRef<Replayer | null>(null);
   const scrubbingRef = useRef(false);
+  const pendingPlayRef = useRef(false);
   const [manifest, setManifest] = useState<ReplayManifest | null>(null);
   const [events, setEvents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -74,6 +76,9 @@ export function ReplayPlayer({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      pendingPlayRef.current = false;
+      setPlayerReady(false);
+      setPlaying(false);
       setLoading(true);
       setError(null);
       try {
@@ -156,6 +161,7 @@ export function ReplayPlayer({
 
   useEffect(() => {
     if (!rootRef.current || events.length === 0) return;
+    setPlayerReady(false);
     rootRef.current.replaceChildren();
     const replayer = new Replayer(events, {
       root: rootRef.current,
@@ -165,14 +171,26 @@ export function ReplayPlayer({
       mouseTail: { duration: 400, lineWidth: 2, strokeStyle: '#5951d8' },
     });
     replayerRef.current = replayer;
-    setDuration(replayer.getMetaData().totalTime);
+    const totalTime = replayer.getMetaData().totalTime;
+    setDuration(totalTime);
     setCurrentTime(0);
     setPlaying(false);
+    // Build the initial full snapshot immediately. Previously this happened
+    // only after seeking, which made the first Play click appear unresponsive.
+    replayer.pause(0);
+
+    const start = () => setPlaying(true);
+    const pause = () => setPlaying(false);
     const finish = () => {
+      pendingPlayRef.current = false;
       setPlaying(false);
-      setCurrentTime(replayer.getMetaData().totalTime);
+      setCurrentTime(totalTime);
     };
+    replayer.on('start', start);
+    replayer.on('pause', pause);
     replayer.on('finish', finish);
+    setPlayerReady(true);
+    if (pendingPlayRef.current) replayer.play(0);
     const timer = window.setInterval(() => {
       if (!scrubbingRef.current) {
         setCurrentTime(Math.min(replayer.getCurrentTime(), replayer.getMetaData().totalTime));
@@ -180,6 +198,8 @@ export function ReplayPlayer({
     }, 150);
     return () => {
       window.clearInterval(timer);
+      replayer.off('start', start);
+      replayer.off('pause', pause);
       replayer.off('finish', finish);
       replayer.destroy();
       replayerRef.current = null;
@@ -188,18 +208,31 @@ export function ReplayPlayer({
 
   const togglePlayback = () => {
     const replayer = replayerRef.current;
-    if (!replayer) return;
+    if (!replayer || !playerReady) {
+      const shouldPlay = !playing;
+      pendingPlayRef.current = shouldPlay;
+      setPlaying(shouldPlay);
+      return;
+    }
     if (playing) {
+      pendingPlayRef.current = false;
       replayer.pause();
       setCurrentTime(replayer.getCurrentTime());
+    } else {
+      pendingPlayRef.current = true;
+      replayer.play(currentTime >= duration ? 0 : currentTime);
     }
-    else replayer.play(currentTime >= duration ? 0 : currentTime);
-    setPlaying((value) => !value);
   };
 
   const restart = () => {
     const replayer = replayerRef.current;
-    if (!replayer) return;
+    if (!replayer || !playerReady) {
+      pendingPlayRef.current = true;
+      setCurrentTime(0);
+      setPlaying(true);
+      return;
+    }
+    pendingPlayRef.current = true;
     replayer.pause(0);
     replayer.play(0);
     setCurrentTime(0);
@@ -214,6 +247,7 @@ export function ReplayPlayer({
   const seek = (next: number) => {
     const replayer = replayerRef.current;
     if (!replayer) return;
+    pendingPlayRef.current = false;
     replayer.pause(next);
     scrubbingRef.current = false;
     setPlaying(false);
