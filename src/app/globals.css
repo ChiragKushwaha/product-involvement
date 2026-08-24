@@ -578,7 +578,51 @@ body.gsc-overflow-hidden:not(:has(.google-inline-results)) {
   display: none;
 }
 
+/* Thank-you celebration: DOM ribbons remain visible even while Drive syncs. */
+.celebration-streams {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.celebration-streamer {
+  position: absolute;
+  top: -170px;
+  display: block;
+  opacity: 0;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 18%);
+  animation-name: celebration-streamer-right;
+  animation-timing-function: cubic-bezier(0.2, 0.68, 0.28, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+.celebration-streamer:nth-child(even) {
+  animation-name: celebration-streamer-left;
+}
+
+@keyframes celebration-streamer-right {
+  0% { opacity: 0; transform: translate3d(0, -12vh, 0) rotate(0deg); }
+  10% { opacity: 1; }
+  84% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(9vw, 118vh, 0) rotate(720deg); }
+}
+
+@keyframes celebration-streamer-left {
+  0% { opacity: 0; transform: translate3d(0, -12vh, 0) rotate(0deg); }
+  10% { opacity: 1; }
+  84% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-9vw, 118vh, 0) rotate(-720deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .celebration-streams {
+    display: none;
+  }
+
   *,
   *::before,
   *::after {

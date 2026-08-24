@@ -85,6 +85,60 @@ function participantSessionId(data: Demographics) {
   return `${slugPart(data.fullName, 'participant')}-${slugPart(data.age, 'age')}-${slugPart(data.gender, 'gender')}-${stamp}`;
 }
 
+const STREAMERS = [
+  { left: 4, color: '#5951d8', delay: 0.05, duration: 2.7 },
+  { left: 11, color: '#ff7356', delay: 0.24, duration: 3.1 },
+  { left: 19, color: '#f5c84c', delay: 0.12, duration: 2.9 },
+  { left: 27, color: '#67c6ae', delay: 0.38, duration: 3.2 },
+  { left: 35, color: '#8b83f4', delay: 0.02, duration: 2.8 },
+  { left: 43, color: '#ff9a83', delay: 0.3, duration: 3.3 },
+  { left: 51, color: '#f5c84c', delay: 0.16, duration: 2.8 },
+  { left: 59, color: '#5951d8', delay: 0.42, duration: 3.1 },
+  { left: 67, color: '#67c6ae', delay: 0.08, duration: 3 },
+  { left: 75, color: '#ff7356', delay: 0.34, duration: 2.7 },
+  { left: 83, color: '#8b83f4', delay: 0.18, duration: 3.2 },
+  { left: 91, color: '#f5c84c', delay: 0.46, duration: 2.9 },
+] as const;
+
+function CelebrationStreamers() {
+  return (
+    <div className="celebration-streams" aria-hidden="true">
+      {STREAMERS.map((streamer, index) => (
+        <span
+          key={`${streamer.left}-${streamer.color}`}
+          className="celebration-streamer"
+          style={{
+            left: `${streamer.left}%`,
+            backgroundColor: streamer.color,
+            animationDelay: `${streamer.delay}s`,
+            animationDuration: `${streamer.duration}s`,
+            width: `${index % 3 === 0 ? 12 : 8}px`,
+            height: `${index % 4 === 0 ? 150 : 110}px`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function launchCelebration() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const colors = ['#5951d8', '#ff7356', '#f5c84c', '#67c6ae', '#8b83f4'];
+  confetti({
+    particleCount: 120,
+    spread: 92,
+    startVelocity: 48,
+    gravity: 0.9,
+    origin: { y: 0.58 },
+    colors,
+    zIndex: 80,
+  });
+  window.setTimeout(() => {
+    confetti({ particleCount: 45, angle: 58, spread: 60, origin: { x: 0, y: 0.68 }, colors, zIndex: 80 });
+    confetti({ particleCount: 45, angle: 122, spread: 60, origin: { x: 1, y: 0.68 }, colors, zIndex: 80 });
+  }, 240);
+}
+
 export default function Home() {
   const [sessionId, setSessionId] = useState('');
   const [stage, setStage] = useState(1);
@@ -177,6 +231,7 @@ export default function Home() {
     setSubmitting(true);
     setSubmitNote('Finalising your response and session replay…');
     advance(7);
+    window.requestAnimationFrame(launchCelebration);
 
     // Capture the rendered thank-you state before closing the recorder.
     await new Promise<void>((resolve) => {
@@ -219,7 +274,6 @@ export default function Home() {
     );
 
     setSubmitting(false);
-    confetti({ particleCount: 110, spread: 78, origin: { y: 0.6 } });
   };
 
   const resetAll = () => {
@@ -297,6 +351,7 @@ export default function Home() {
 
       {stage === 7 && (
         <Screen>
+          <CelebrationStreamers />
           <div className="flex min-h-[80dvh] flex-col justify-center">
             <div className="card bg-sage p-6 text-[#16181a]">
               <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-surface">
