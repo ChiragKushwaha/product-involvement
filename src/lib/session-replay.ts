@@ -184,8 +184,9 @@ export class SessionReplayRecorder {
       checkoutEveryNms: 5 * 60 * 1000,
       blockSelector: '[data-replay-block]',
       ignoreSelector: '[data-replay-ignore]',
-      maskTextSelector: '[data-replay-mask]',
-      maskInputOptions: { password: true },
+      // Survey answers, searches, and chat text must be visible in research replay.
+      maskTextClass: 'replay-masking-disabled',
+      maskInputOptions: {},
       recordCanvas: false,
       inlineImages: false,
       collectFonts: false,

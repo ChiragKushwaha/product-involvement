@@ -108,7 +108,15 @@ export default function Home() {
   const replayRef = useRef(new SessionReplayRecorder());
   const activeSessionIdRef = useRef('');
 
-  useEffect(() => () => replayRef.current.dispose(), []);
+  useEffect(() => {
+    const recorder = replayRef.current;
+    void recorder.start();
+    return () => {
+      recorder.dispose();
+      // React development mode remounts effects; give the second mount a fresh recorder.
+      if (replayRef.current === recorder) replayRef.current = new SessionReplayRecorder();
+    };
+  }, []);
   useEffect(() => startResponseUploadRecovery((status) => {
     if (status.sessionId !== activeSessionIdRef.current) return;
     if (status.state === 'uploading') {
@@ -217,6 +225,7 @@ export default function Home() {
   const resetAll = () => {
     replayRef.current.dispose();
     replayRef.current = new SessionReplayRecorder();
+    void replayRef.current.start();
     activeSessionIdRef.current = '';
     setSessionId('');
     setStage(1);
@@ -237,7 +246,6 @@ export default function Home() {
       {stage === 1 && (
         <DemographicsForm
           initialData={demographics}
-          onReplayConsent={() => replayRef.current.start()}
           onSubmit={(d) => {
             const id = participantSessionId(d);
             activeSessionIdRef.current = id;
@@ -300,7 +308,7 @@ export default function Home() {
                 participating
               </h1>
               <p className="mt-3 text-[14px] leading-relaxed text-[#16181a]/70">
-                Your responses and privacy-masked session replay have been recorded. The data is
+                Your responses and full in-app session replay have been recorded. The data is
                 confidential and will be used solely for academic research purposes.
               </p>
               {submitNote && (

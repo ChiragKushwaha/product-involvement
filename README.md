@@ -12,7 +12,7 @@ in the measurement PDF.
   ad feedback → involvement → search → purchase intention)
 - **Design** — the visual language in `public/design`, in light and dark themes
 - **Storage** — private per-participant Drive folders plus `master-data.json`
-- **Session replay** — privacy-masked DOM event capture stored as compressed chunks in Drive
+- **Session replay** — full in-app DOM event capture stored as compressed chunks in Drive
 - **Target** — iPhone SE (375 × 667) upward, adapting to desktop
 
 ---
@@ -151,11 +151,12 @@ The receiver also supports event-only session replay. After updating
 source alone does not update an existing `/exec` deployment). Keep the same `/exec` URL
 and token in the app environment.
 
-The participant must consent before replay recording begins. Demographic fields appear
-only after consent, so name, age, gender and the other entered answers are included in
-the replay together with the final thank-you screen. It captures this app's DOM changes,
-clicks, touch movement, scrolling and input events; it records only URL/timing annotations
-for external websites. Replay chunks are gzip-compressed before transport, then stored
+Replay recording begins automatically when the survey opens. Name, age, gender, searches,
+AI prompts and responses, and every other entered answer remain visible in the replay,
+together with the final thank-you screen. It captures this app's DOM changes, clicks,
+touch movement, scrolling and input events; it records only URL/timing annotations for
+external websites. The Google and AI channels use native in-app interfaces so their full
+interaction is reconstructable. Replay chunks are gzip-compressed before transport, then stored
 as `.json.gz` files. Failed response and replay uploads are persisted in the browser and
 retried automatically with backoff while the page is open, when connectivity returns,
 through browser background sync where supported, and on a later visit.

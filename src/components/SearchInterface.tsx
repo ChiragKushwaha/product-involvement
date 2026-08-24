@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject, SubmitEvent, UIEvent } from 'react';
-import Script from 'next/script';
 import {
   ArrowLeft,
   Bot,
@@ -27,12 +26,11 @@ import type {
   Situation,
 } from '@/types/survey';
 import type { TelemetryCollector } from '@/lib/telemetry-tracker';
-import { SEARCH_RESULTS } from '@/lib/search-corpus';
+import { buildAiReply, SEARCH_RESULTS } from '@/lib/search-corpus';
 import { ACCENT_BG, ACCENT_ON, ThemeToggle, cx } from '@/components/ui';
 
 /** Scroll events within this window belong to the same gesture (one CT1 action). */
 const GESTURE_MS = 350;
-const USE_CHATBASE_AI = true;
 
 function useScrollTracker(collector: TelemetryCollector, channel: Channel, sourceId?: string) {
   const lastActionRef = useRef(0);
@@ -97,31 +95,6 @@ interface ReaderState {
   error?: string;
 }
 
-interface GoogleCseWindow extends Window {
-  __gcse?: {
-    parsetags?: 'explicit';
-    callback?: () => void;
-    searchCallbacks?: {
-      web?: { starting?: (gname: string, query: string) => string };
-    };
-  };
-  google?: {
-    search?: {
-      cse?: {
-        element?: {
-          render: (config: {
-            div: string;
-            tag: 'searchresults-only';
-            gname: string;
-            attributes: { linkTarget: string; enableHistory: boolean };
-          }) => void;
-          getElement: (gname: string) => { execute: (query: string) => void } | null;
-        };
-      };
-    };
-  };
-}
-
 export function SearchInterface({
   situation,
   collector,
@@ -171,6 +144,27 @@ export function SearchInterface({
       q: string,
       page = 1,
     ): Promise<{ results: SearchResult[]; live: boolean; hasNext: boolean; error?: string }> => {
+      const fallback = () => {
+        const terms = q.toLowerCase().split(/\s+/).filter((term) => term.length > 1);
+        const ranked = corpus
+          .map((result, index) => ({
+            result,
+            index,
+            score: terms.reduce((score, term) => {
+              const haystack = `${result.title} ${result.snippet} ${result.domain}`.toLowerCase();
+              return score + (haystack.includes(term) ? 1 : 0);
+            }, 0),
+          }))
+          .sort((a, b) => b.score - a.score || a.index - b.index)
+          .map(({ result }) => result);
+        const start = (page - 1) * 8;
+        return {
+          results: ranked.slice(start, start + 8),
+          live: false,
+          hasNext: start + 8 < ranked.length,
+        };
+      };
+
       try {
         const res = await fetch(
           `/api/search?q=${encodeURIComponent(q)}&limit=8&page=${page}`,
@@ -183,17 +177,12 @@ export function SearchInterface({
             hasNext: Boolean(data.hasNext),
           };
         }
-        return {
-          results: [],
-          live: false,
-          hasNext: false,
-          error: data?.error ?? 'Google Search is unavailable.',
-        };
+        return fallback();
       } catch {
-        return { results: [], live: false, hasNext: false, error: 'Could not reach Google Search.' };
+        return fallback();
       }
     },
-    [],
+    [corpus],
   );
 
   const runSearch = useCallback(
@@ -235,7 +224,13 @@ export function SearchInterface({
       // Back from a real site: the away time is dwell on that source.
       if (externalRef.current) {
         externalRef.current = false;
-        collector.endExternalVisit();
+        const visit = collector.endExternalVisit();
+        if (visit) {
+          onReplayEvent?.('external_site_returned', {
+            ...visit,
+            returnedAt: new Date().toISOString(),
+          });
+        }
       }
       collector.resume();
     };
@@ -245,7 +240,7 @@ export function SearchInterface({
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onVisibility);
     };
-  }, [collector]);
+  }, [collector, onReplayEvent]);
 
   /* ------------------------------------------------------------ handlers */
 
@@ -296,7 +291,13 @@ export function SearchInterface({
     collector.logSourceClose();
     externalRef.current = true;
     collector.beginExternalVisit(sourceId, url, ch);
-    onReplayEvent?.('external_site_opened', { channel: ch, url });
+    onReplayEvent?.('external_site_opened', {
+      channel: ch,
+      sourceId,
+      url,
+      openedAt: new Date().toISOString(),
+      navigationMode: 'new_tab',
+    });
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -311,6 +312,7 @@ export function SearchInterface({
     setThinking(true);
     const userMessage: AiMessage = { id: `u-${Date.now()}`, role: 'user', text: p };
     const conversation = [...messages, userMessage];
+    const fallback = buildAiReply(cat, p);
     setMessages(conversation);
 
     try {
@@ -324,13 +326,17 @@ export function SearchInterface({
         }),
       });
       const data = await response.json();
-      const replyText = data?.ok && typeof data.text === 'string'
-        ? data.text
-        : data?.error ?? 'The AI assistant is unavailable right now.';
+      const liveReply = data?.ok && typeof data.text === 'string';
+      const replyText = liveReply ? data.text : fallback.text;
       const id = `a-${Date.now()}`;
       setMessages((current) => [
         ...current,
-        { id, role: 'assistant', text: replyText },
+        {
+          id,
+          role: 'assistant',
+          text: replyText,
+          citations: liveReply ? undefined : fallback.citations,
+        },
       ]);
       setThinking(false);
       // A response is a dwell/scroll unit but not a "source opened" for SN1/SN2.
@@ -338,11 +344,7 @@ export function SearchInterface({
     } catch {
       setMessages((current) => [
         ...current,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          text: 'The AI assistant could not be reached. Please try again.',
-        },
+        { id: `a-${Date.now()}`, role: 'assistant', text: fallback.text, citations: fallback.citations },
       ]);
       setThinking(false);
     }
@@ -477,8 +479,6 @@ export function SearchInterface({
                 onPageChange={(page) => void runSearch(submitted, page)}
                 activeId={openSourceId}
                 onOpen={openArticle}
-                embedded
-                collector={collector}
                 onBack={() => switchChannel('Direct Website')}
               />
             )}
@@ -519,7 +519,7 @@ export function SearchInterface({
       </div>
 
       {/* -------------------------------------------------- prompt + nav */}
-      {channel === 'Conversational AI' && !open && !USE_CHATBASE_AI && (
+      {channel === 'Conversational AI' && !open && (
         <div className="mx-auto w-full max-w-md shrink-0 px-4 pb-2 pt-2 lg:max-w-6xl lg:px-8">
           <form
             onSubmit={(e) => {
@@ -564,122 +564,6 @@ export function SearchInterface({
 
 /* ====================================================== channel: Google */
 
-const GOOGLE_SEARCH_ENGINE_ID = '125890caa9c4b4550';
-
-function GoogleProgrammableSearch({
-  collector,
-  onBack,
-}: {
-  collector: TelemetryCollector;
-  onBack: () => void;
-}) {
-  const reactId = useId();
-  const idBase = `google-cse-${reactId.replace(/:/g, '')}`;
-  const resultsId = `${idBase}-results`;
-  const renderedRef = useRef(false);
-  const [query, setQuery] = useState('');
-
-  const renderSearch = useCallback(() => {
-    const cseWindow = window as GoogleCseWindow;
-    const render = cseWindow.google?.search?.cse?.element?.render;
-    const results = document.getElementById(resultsId);
-    if (!render || !results || renderedRef.current) return;
-
-    renderedRef.current = true;
-    render({
-      div: resultsId,
-      tag: 'searchresults-only',
-      gname: idBase,
-      attributes: { linkTarget: '_blank', enableHistory: true },
-    });
-  }, [idBase, resultsId]);
-
-  const submitSearch = (event: SubmitEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const nextQuery = query.trim();
-    if (!nextQuery) return;
-    const element = (window as GoogleCseWindow).google?.search?.cse?.element?.getElement(idBase);
-    element?.execute(nextQuery);
-  };
-
-  useEffect(() => {
-    const cseWindow = window as GoogleCseWindow;
-    cseWindow.__gcse = {
-      parsetags: 'explicit',
-      callback: renderSearch,
-      searchCallbacks: {
-        web: {
-          starting: (_gname, query) => {
-            collector.logQuery(query, 'Google Search');
-            return query;
-          },
-        },
-      },
-    };
-    renderSearch();
-
-    return () => {
-      for (const element of [document.documentElement, document.body]) {
-        element.classList.remove('gsc-overflow-hidden');
-        if (element.style.overflow === 'hidden') element.style.removeProperty('overflow');
-        if (element.style.overflowY === 'hidden') element.style.removeProperty('overflow-y');
-      }
-    };
-  }, [collector, renderSearch]);
-
-  return (
-    <div className="min-w-0 overflow-x-clip pb-4">
-      <Script
-        id="google-programmable-search"
-        src={`https://cse.google.com/cse.js?cx=${GOOGLE_SEARCH_ENGINE_ID}`}
-        strategy="afterInteractive"
-        onReady={renderSearch}
-      />
-      <button
-        onClick={onBack}
-        className="mb-4 flex h-10 items-center gap-2 rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
-      >
-        <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-        All options
-      </button>
-      <div className="sticky top-0 z-20 mb-3 rounded-[22px] bg-surface pb-2">
-        <form onSubmit={submitSearch} className="flex items-center gap-2 rounded-full bg-card py-2.5 pl-4 pr-2 ring-1 ring-line">
-          <Search className="h-[18px] w-[18px] shrink-0 text-faint" strokeWidth={2.5} />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            enterKeyHint="search"
-            placeholder="Search Google"
-            aria-label="Search Google"
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-content outline-none placeholder:text-faint"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="shrink-0 p-1 text-faint"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" strokeWidth={2.5} />
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={!query.trim()}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary disabled:bg-well disabled:text-faint"
-            aria-label="Submit Google search"
-          >
-            <Search className="h-4 w-4" strokeWidth={2.5} />
-          </button>
-        </form>
-      </div>
-      <div className="google-inline-results min-h-56">
-        <div id={resultsId} />
-      </div>
-    </div>
-  );
-}
-
 function GoogleChannel({
   query,
   setQuery,
@@ -694,8 +578,6 @@ function GoogleChannel({
   onPageChange,
   activeId,
   onOpen,
-  embedded,
-  collector,
   onBack,
 }: {
   query: string;
@@ -711,19 +593,22 @@ function GoogleChannel({
   onPageChange: (page: number) => void;
   activeId?: string;
   onOpen: (r: SearchResult) => void;
-  embedded?: boolean;
-  collector?: TelemetryCollector;
   onBack?: () => void;
 }) {
-  if (embedded && collector && onBack) {
-    return <GoogleProgrammableSearch collector={collector} onBack={onBack} />;
-  }
-
   const firstVisiblePage = Math.min(6, Math.max(1, page - 2));
   const visiblePages = Array.from({ length: 5 }, (_, index) => firstVisiblePage + index);
 
   return (
     <div className="pb-4">
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-4 flex h-10 items-center gap-2 rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
+        >
+          <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
+          All options
+        </button>
+      )}
       <form onSubmit={onSubmit} className="sticky top-0 z-10 bg-surface pb-3 pt-1">
         <div className="flex items-center gap-2 rounded-full bg-card py-2.5 pl-4 pr-2 ring-1 ring-line">
           <Search className="h-[18px] w-[18px] shrink-0 text-faint" strokeWidth={2.5} />
@@ -733,6 +618,7 @@ function GoogleChannel({
             enterKeyHint="search"
             className="min-w-0 flex-1 bg-transparent text-[15px] text-content outline-none placeholder:text-faint"
             placeholder="Search"
+            aria-label="Search Google"
           />
           {query && (
             <button
@@ -744,6 +630,14 @@ function GoogleChannel({
               <X className="h-4 w-4" strokeWidth={2.5} />
             </button>
           )}
+          <button
+            type="submit"
+            disabled={!query.trim() || searching}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary disabled:bg-well disabled:text-faint"
+            aria-label="Submit Google search"
+          >
+            <Search className="h-4 w-4" strokeWidth={2.5} />
+          </button>
         </div>
       </form>
 
@@ -763,7 +657,7 @@ function GoogleChannel({
                 liveMode ? 'bg-mint/30 text-content' : 'bg-well text-faint',
               )}
             >
-              {liveMode ? 'Google' : 'Google unavailable'}
+              {liveMode ? 'Google live' : 'Recorded study results'}
             </span>
           </>
         ) : (
@@ -919,28 +813,6 @@ function AiChannel({
   onScroll: (e: UIEvent<HTMLElement>) => void;
   endRef: RefObject<HTMLDivElement | null>;
 }) {
-  if (USE_CHATBASE_AI) {
-    return (
-      <div className="flex h-full min-h-[520px] flex-col pb-2">
-        <button
-          onClick={onBack}
-          className="mb-3 flex h-10 shrink-0 items-center gap-2 self-start rounded-full bg-card px-4 text-[12px] font-semibold text-muted transition active:scale-[0.98]"
-        >
-          <ArrowLeft className="h-4 w-4" strokeWidth={2.5} />
-          All options
-        </button>
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[22px] bg-card">
-          <iframe
-            allow="microphone"
-            title="Ask AI"
-            src="https://www.chatbase.co/chatbot-iframe/kIPeAJ4dLUiUr1BUMU-XU?theme=dark"
-            className="absolute inset-0 flex h-full w-full border-0"
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div onScroll={onScroll} className="pb-4">
       <button

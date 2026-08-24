@@ -236,7 +236,7 @@ export function ReplayPlayer({
         </Link>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">
-            Privacy-masked event replay
+            Full in-app event replay
           </p>
           <h1 className="display truncate text-[25px] sm:text-[32px]">{sessionId}</h1>
           {manifest && (

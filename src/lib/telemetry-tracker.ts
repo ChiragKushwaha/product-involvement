@@ -150,16 +150,28 @@ export class TelemetryCollector {
     if (!this.externalVisitActive) return;
     const active = this.activeSource;
     this.externalVisitActive = false;
+    let visit:
+      | { sourceId: string; url: string; channel: Channel; durationSec: number }
+      | undefined;
     if (active) {
+      const url = this.sources.get(active.id)?.url ?? active.id;
+      const pausedDuring = this.pausedSoFarMs() - active.pausedAtOpenMs;
+      const durationSec = Math.max(
+        1,
+        Math.round((Date.now() - active.openedMs - pausedDuring) / 1000),
+      );
+      visit = { sourceId: active.id, url, channel: active.channel, durationSec };
       this.eventLogs.push({
         timestamp: new Date().toISOString(),
         elapsedSec: this.activeElapsedSec(),
         channel: active.channel,
         eventType: 'external_return',
-        queryOrUrl: this.sources.get(active.id)?.url,
+        queryOrUrl: url,
+        dwellTimeSec: durationSec,
       });
     }
     this.logSourceClose();
+    return visit;
   }
 
   /**
