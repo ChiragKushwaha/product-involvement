@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Archivo, Inter } from "next/font/google";
 import "./globals.css";
+import "@rrweb/replay/dist/style.css";
 
 const archivo = Archivo({
   variable: "--font-archivo",

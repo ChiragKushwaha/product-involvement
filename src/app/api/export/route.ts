@@ -1,4 +1,4 @@
-import { listSessions } from '@/lib/db';
+import { listDriveSessions } from '@/lib/drive-data';
 import { eventLogCsv, toCsv } from '@/lib/export';
 
 export const runtime = 'nodejs';
@@ -12,7 +12,7 @@ function authorised(request: Request) {
   return supplied === expected;
 }
 
-/** Direct CSV/JSON download straight from the database. */
+/** Direct CSV/JSON download generated from Drive's master-data.json. */
 export async function GET(request: Request) {
   if (!authorised(request)) {
     return Response.json({ ok: false, error: 'Unauthorised' }, { status: 401 });
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
   const format = new URL(request.url).searchParams.get('format') ?? 'responses';
   const stamp = new Date().toISOString().slice(0, 10);
-  const sessions = await listSessions();
+  const sessions = await listDriveSessions();
 
   if (format === 'json') {
     return new Response(JSON.stringify(sessions, null, 2), {

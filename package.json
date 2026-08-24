@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.4",
+    "@rrweb/packer": "^2.1.1",
+    "@rrweb/record": "^2.1.1",
+    "@rrweb/replay": "^2.1.1",
     "@types/canvas-confetti": "^1.9.0",
     "canvas-confetti": "^1.9.4",
     "lucide-react": "^1.28.0",

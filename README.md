@@ -11,7 +11,8 @@ in the measurement PDF.
 - **Flow** — the seven screens from the flow PDF (details → ad selection → stimulus →
   ad feedback → involvement → search → purchase intention)
 - **Design** — the visual language in `public/design`, in light and dark themes
-- **Storage** — SQLite (`data/survey.db`), with a dashboard at `/dashboard`
+- **Storage** — private per-participant Drive folders plus `master-data.json`
+- **Session replay** — privacy-masked DOM event capture stored as compressed chunks in Drive
 - **Target** — iPhone SE (375 × 667) upward, adapting to desktop
 
 ---
@@ -26,8 +27,8 @@ npm run dev          # http://localhost:3000
 Researcher dashboard: **`/dashboard`** — charts, tables and CSV downloads. Also
 linked from the completion screen.
 
-Responses are written to `data/survey.db` (SQLite). The file is created on the
-first submission.
+Responses are written to Google Drive. The dashboard reads the private
+`master-data.json` file through the server-side Apps Script receiver.
 
 ---
 
@@ -107,10 +108,9 @@ source open/close, scroll and external visit.
 
 ## Storing responses in Google Drive
 
-Every submission is written to `localStorage` first, so a network failure can never
-lose a response. It is then POSTed to `/api/responses`, which writes to the local
-`data/survey.db` during development or the connected Turso database in production,
-and forwards to Drive if configured.
+Every submission is written to `localStorage` first and then POSTed to
+`/api/responses`. The server forwards it to the private Apps Script receiver; no
+database or Turso account is required.
 
 To write into the study's Drive folder:
 
@@ -124,15 +124,43 @@ To write into the study's Drive folder:
 SURVEY_WEBHOOK_URL=https://script.google.com/macros/s/…/exec
 SURVEY_WEBHOOK_TOKEN=<the same secret>
 ADMIN_TOKEN=<required in production to read GET /api/responses>
-TURSO_DATABASE_URL=libsql://…
-TURSO_AUTH_TOKEN=…
 ```
 
-Each submission then appends a row to a **Survey Responses** sheet in that folder and
-drops the raw JSON into a `raw-json` subfolder.
+Each submission is stored in its own folder and upserted into the master file. A
+spreadsheet row is also retained as a convenient human-readable index:
 
-Without the optional Drive webhook the app still works — responses stay on the device
-and in SQLite/Turso, and the dashboard exports them.
+```text
+participants/
+  <session-id>/
+    response.json
+    replay/
+      manifest.json
+      chunk-<tab-id>-000000.json.gz
+master-data.json
+master-data.backup.json
+Survey Responses
+```
+
+`master-data.json` contains every complete survey response, including behavioral
+telemetry and replay metadata. Replay event chunks stay only in the participant folder
+to avoid duplicating large payloads. The dashboard and every CSV/JSON export are derived
+from the master file.
+
+The receiver also supports event-only session replay. After updating
+`scripts/drive-receiver.gs`, create a **new Apps Script deployment version** (editing the
+source alone does not update an existing `/exec` deployment). Keep the same `/exec` URL
+and token in the app environment.
+
+The participant must consent before replay recording begins. The recorder starts only
+after the demographic screen, so the typed full name is not present in the replay. It
+captures this app's DOM changes, clicks, touch movement, scrolling and input events; it
+records only URL/timing annotations for external websites. Failed uploads are queued in
+IndexedDB and retried. Researchers can open `/replays?token=<ADMIN_TOKEN>` or use the
+**Session replays** link on the dashboard.
+
+If Drive is temporarily unavailable, the completed response remains in the browser's
+local backup and replay chunks remain in IndexedDB for retry. The Drive receiver is
+required for the shared dashboard and exports.
 
 ### Exports
 
@@ -172,7 +200,9 @@ src/
     situations-data.ts        the 8 situations, verbatim
     search-corpus.ts          fallback information environment per category
     telemetry-tracker.ts      SN/TE/CT/QD collection
-    db.ts                     SQLite store + dashboard aggregates
+    analytics.ts              in-memory dashboard rollups from the master file
+    drive-data.ts             server-only master-data.json reader
+    drive-replays.ts          server-only replay reader
     export.ts                 CSV builders
     local-store.ts            on-device backup
 public/ads/                   the eight advertisement videos
@@ -181,11 +211,11 @@ scripts/drive-receiver.gs     Google Apps Script → Drive folder
 
 ### Notes for deployment
 
-- `data/` and `public/ads/*.mp4` are gitignored. The videos total ~235 MB —
+- `public/ads/*.mp4` is gitignored. The videos total ~235 MB —
   deploy them alongside the app, or track them with Git LFS if you want them in
   the repository.
-- SQLite needs a writable disk. On a serverless host (Vercel) there is none, so
-  use the Drive webhook below, a persistent volume, or a hosted database.
+- Redeploy the Apps Script as a new version whenever `drive-receiver.gs` changes;
+  saving the Apps Script source alone does not update an existing web deployment.
 
 ### How the search channels work
 

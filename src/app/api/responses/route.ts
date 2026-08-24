@@ -1,5 +1,6 @@
 import type { CompleteSurveySession } from '@/types/survey';
-import { listSessions, saveSession } from '@/lib/db';
+import { listDriveSessions } from '@/lib/drive-data';
+import { callDriveWebhook } from '@/lib/drive-webhook';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,21 +10,10 @@ export const dynamic = 'force-dynamic';
  * study's Drive folder. Configure SURVEY_WEBHOOK_URL — see scripts/drive-receiver.gs.
  */
 async function forwardToDrive(session: CompleteSurveySession) {
-  const url = process.env.SURVEY_WEBHOOK_URL;
-  if (!url) return { forwarded: false, reason: 'SURVEY_WEBHOOK_URL not configured' };
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: process.env.SURVEY_WEBHOOK_TOKEN ?? '', session }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) return { forwarded: false, reason: `webhook returned ${res.status}` };
-    return { forwarded: true };
-  } catch (err) {
-    return { forwarded: false, reason: err instanceof Error ? err.message : 'unknown error' };
-  }
+  const result = await callDriveWebhook('survey', { session }, 60_000);
+  return result.ok
+    ? { forwarded: true }
+    : { forwarded: false, reason: result.error ?? 'Drive write failed' };
 }
 
 export async function POST(request: Request) {
@@ -38,17 +28,12 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: 'Malformed session payload' }, { status: 400 });
   }
 
-  let stored: { ok: boolean; reason?: string };
-  try {
-    await saveSession(session);
-    stored = { ok: true };
-  } catch (err) {
-    stored = { ok: false, reason: err instanceof Error ? err.message : 'db write failed' };
-  }
-
   const drive = await forwardToDrive(session);
 
-  return Response.json({ ok: true, sessionId: session.sessionId, stored, drive });
+  return Response.json(
+    { ok: drive.forwarded, sessionId: session.sessionId, drive },
+    { status: drive.forwarded ? 200 : 503 },
+  );
 }
 
 function authorised(request: Request) {
@@ -64,7 +49,7 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: 'Unauthorised' }, { status: 401 });
   }
   try {
-    const sessions = await listSessions();
+    const sessions = await listDriveSessions();
     return Response.json({ ok: true, count: sessions.length, sessions });
   } catch (err) {
     return Response.json(

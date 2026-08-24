@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 
@@ -14,6 +14,7 @@ import { PrimaryButton, Screen } from '@/components/ui';
 
 import { TelemetryCollector } from '@/lib/telemetry-tracker';
 import { appendLocalSession } from '@/lib/local-store';
+import { SessionReplayRecorder } from '@/lib/session-replay';
 import type {
   AdFeedback,
   CombinedTelemetry,
@@ -55,7 +56,12 @@ const EMPTY_INTENT: PurchaseIntent = {
   q10_probabilityHigh: 0,
 };
 
+function newSessionId() {
+  return `S-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function Home() {
+  const [sessionId, setSessionId] = useState(newSessionId);
   const [stage, setStage] = useState(1);
   const [demographics, setDemographics] = useState<Demographics>(EMPTY_DEMOGRAPHICS);
   const [situation, setSituation] = useState<Situation | null>(null);
@@ -74,15 +80,23 @@ export default function Home() {
   const [submitNote, setSubmitNote] = useState<string | null>(null);
 
   const [collector, setCollector] = useState(() => new TelemetryCollector());
+  const replayRef = useRef(new SessionReplayRecorder());
+
+  useEffect(() => () => replayRef.current.dispose(), []);
 
   const toTop = () => window.scrollTo({ top: 0 });
 
   const advance = useCallback((next: number) => {
+    replayRef.current.addCustomEvent('stage_change', { stage: next });
     setStage(next);
     toTop();
   }, []);
 
   const handleSelectSituation = (s: Situation) => {
+    replayRef.current.addCustomEvent('situation_selected', {
+      code: s.code,
+      category: s.category,
+    });
     setSituation(s);
     setFeedback(EMPTY_FEEDBACK);
     setInvolvement(EMPTY_INVOLVEMENT);
@@ -116,8 +130,10 @@ export default function Home() {
     setIntent(finalIntent);
     setSubmitting(true);
 
+    const replay = await replayRef.current.finalize();
+
     const session: CompleteSurveySession = {
-      sessionId: `S-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId,
       timestamp: new Date().toISOString(),
       demographics,
       situation,
@@ -133,6 +149,7 @@ export default function Home() {
         liveResults: telemetry.visitedSources.some((u) => u.startsWith('http')),
         externalVisits: collector.externalVisits,
       },
+      replay,
     };
 
     // Local copy first, so a network failure can never lose the response.
@@ -146,9 +163,11 @@ export default function Home() {
       });
       const data = await res.json();
       setSubmitNote(
-        data?.drive?.forwarded
-          ? 'Saved to the study Drive folder.'
-          : 'Saved on this device and on the server.',
+        data?.drive?.forwarded && replay.status === 'uploaded'
+          ? 'Response and session replay saved to the study Drive folder.'
+          : data?.drive?.forwarded
+            ? 'Response saved to Drive. The replay upload will retry automatically.'
+            : 'Drive is unavailable. A backup remains on this device for manual export.',
       );
     } catch {
       setSubmitNote('Saved on this device. It will need exporting manually.');
@@ -160,6 +179,9 @@ export default function Home() {
   };
 
   const resetAll = () => {
+    replayRef.current.dispose();
+    replayRef.current = new SessionReplayRecorder();
+    setSessionId(newSessionId());
     setStage(1);
     setDemographics(EMPTY_DEMOGRAPHICS);
     setSituation(null);
@@ -180,6 +202,7 @@ export default function Home() {
           initialData={demographics}
           onSubmit={(d) => {
             setDemographics(d);
+            void replayRef.current.start(sessionId).catch(() => undefined);
             advance(2);
           }}
         />
@@ -209,6 +232,7 @@ export default function Home() {
         <SearchInterface
           situation={situation}
           collector={collector}
+          onReplayEvent={(tag, payload) => replayRef.current.addCustomEvent(tag, payload)}
           onFinish={handleSearchDone}
         />
       )}
@@ -235,8 +259,8 @@ export default function Home() {
                 participating
               </h1>
               <p className="mt-3 text-[14px] leading-relaxed text-[#16181a]/70">
-                Your responses have been recorded. All data remains anonymous and will be used
-                solely for academic research purposes.
+                Your responses and privacy-masked session replay have been recorded. The data is
+                confidential and will be used solely for academic research purposes.
               </p>
               {submitNote && (
                 <p className="mt-4 rounded-2xl bg-surface/10 px-4 py-3 text-[12px] font-semibold">

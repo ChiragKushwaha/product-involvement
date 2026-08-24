@@ -225,6 +225,16 @@ export interface CombinedTelemetry {
   eventLogs: SearchEventLog[];
 }
 
+export interface ReplayCaptureSummary {
+  captureMode: 'event-replay';
+  /** Uploaded means every queued chunk and the completion manifest reached Drive. */
+  status: 'uploaded' | 'pending' | 'unavailable';
+  eventCount: number;
+  chunkCount: number;
+  startedAt?: string;
+  completedAt?: string;
+}
+
 /* ------------------------------------------------------------------
    One complete participant record
 ------------------------------------------------------------------ */
@@ -247,4 +257,6 @@ export interface CompleteSurveySession {
   videoCompleted: boolean;
   /** Which search modes the participant used */
   searchMode: { liveResults: boolean; externalVisits: number };
+  /** Privacy-aware DOM event replay; no screen or camera recording is used. */
+  replay?: ReplayCaptureSummary;
 }

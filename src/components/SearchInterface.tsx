@@ -126,10 +126,12 @@ export function SearchInterface({
   situation,
   collector,
   onFinish,
+  onReplayEvent,
 }: {
   situation: Situation;
   collector: TelemetryCollector;
   onFinish: (t: CombinedTelemetry) => void;
+  onReplayEvent?: (tag: string, payload: unknown) => void;
 }) {
   const cat = situation.categoryCode;
   const corpus = SEARCH_RESULTS[cat];
@@ -217,6 +219,7 @@ export function SearchInterface({
 
   const switchChannel = (next: Channel) => {
     if (next === channel) return;
+    onReplayEvent?.('search_channel_changed', { from: channel, to: next });
     collector.logSourceClose();
     setOpen(null);
     setChannel(next);
@@ -253,6 +256,7 @@ export function SearchInterface({
     setSubmitted(q);
     setResultPage(1);
     collector.logQuery(q, 'Google Search');
+    onReplayEvent?.('search_submitted', { channel: 'Google Search', query: q });
     void runSearch(q);
     mainRef.current?.scrollTo({ top: 0 });
   };
@@ -292,6 +296,7 @@ export function SearchInterface({
     collector.logSourceClose();
     externalRef.current = true;
     collector.beginExternalVisit(sourceId, url, ch);
+    onReplayEvent?.('external_site_opened', { channel: ch, url });
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -301,6 +306,7 @@ export function SearchInterface({
 
     collector.logSourceClose();
     collector.logQuery(p, 'Conversational AI');
+    onReplayEvent?.('search_submitted', { channel: 'Conversational AI', query: p });
     setPrompt('');
     setThinking(true);
     const userMessage: AiMessage = { id: `u-${Date.now()}`, role: 'user', text: p };

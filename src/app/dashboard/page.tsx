@@ -1,4 +1,5 @@
-import { aggregates } from '@/lib/db';
+import { aggregateSessions } from '@/lib/analytics';
+import { listDriveSessions } from '@/lib/drive-data';
 import { Dashboard } from '@/components/Dashboard';
 
 export const runtime = 'nodejs';
@@ -7,8 +8,8 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Study results · Researcher dashboard' };
 
 /**
- * Reads straight from the SQLite store on the server, so the browser never
- * receives raw participant records — only the rollups the charts plot.
+ * Reads Drive's private master-data.json on the server, so the browser receives
+ * only the aggregated values plotted by the dashboard.
  * Downloads go through /api/export, which applies the same token check.
  */
 export default async function DashboardPage({ searchParams }: PageProps<'/dashboard'>) {
@@ -34,7 +35,7 @@ export default async function DashboardPage({ searchParams }: PageProps<'/dashbo
 
   let data;
   try {
-    data = await aggregates();
+    data = aggregateSessions(await listDriveSessions());
   } catch {
     data = {
       total: 0,

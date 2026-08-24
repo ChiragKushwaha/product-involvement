@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, FileJson, Table2 } from 'lucide-react';
-import type { Aggregates } from '@/lib/db';
+import { ArrowLeft, Download, FileJson, Play, Table2 } from 'lucide-react';
+import type { Aggregates } from '@/lib/analytics';
 import { ThemeToggle, cx } from '@/components/ui';
 
 /**
@@ -283,7 +283,7 @@ export function Dashboard({ data, token }: { data: Aggregates; token?: string })
       </div>
 
       {/* -------------------------------------------------------- downloads */}
-      <div className="mb-6 grid gap-2 sm:grid-cols-3">
+      <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <a
           href={`/api/export?format=responses${qs}`}
           className="flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-primary text-[13px] font-bold text-on-primary transition active:scale-[0.98]"
@@ -305,6 +305,13 @@ export function Dashboard({ data, token }: { data: Aggregates; token?: string })
           <FileJson className="h-4 w-4" strokeWidth={2.5} />
           Raw JSON
         </a>
+        <Link
+          href={token ? `/replays?token=${encodeURIComponent(token)}` : '/replays'}
+          className="flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-card text-[13px] font-semibold text-muted transition active:opacity-80"
+        >
+          <Play className="h-4 w-4" strokeWidth={2.5} />
+          Session replays
+        </Link>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">

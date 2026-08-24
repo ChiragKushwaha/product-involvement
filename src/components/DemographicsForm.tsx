@@ -46,6 +46,7 @@ export function DemographicsForm({
   onSubmit: (d: Demographics) => void;
 }) {
   const [data, setData] = useState<Demographics>(initialData);
+  const [replayConsent, setReplayConsent] = useState(false);
 
   const set = <K extends keyof Demographics>(key: K, value: Demographics[K]) =>
     setData((prev) => ({ ...prev, [key]: value }));
@@ -55,7 +56,8 @@ export function DemographicsForm({
     data.age !== '' &&
     data.gender !== '' &&
     data.education !== '' &&
-    data.onlinePurchaseFreq !== '';
+    data.onlinePurchaseFreq !== '' &&
+    replayConsent;
 
   return (
     <Screen>
@@ -77,8 +79,9 @@ export function DemographicsForm({
           Search Survey
         </h1>
         <p className="text-[13px] font-medium leading-relaxed text-on-primary/75">
-          All responses will remain anonymous and will be used solely for academic research
-          purposes.
+          Responses are confidential and will be used solely for academic research. After this
+          page, the study records clicks, scrolling and page changes for session replay; it does
+          not record your screen, camera or activity on other websites.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-black/20 px-3 py-2">
           <ShieldCheck className="h-4 w-4" strokeWidth={2.5} />
@@ -130,6 +133,19 @@ export function DemographicsForm({
           value={data.onlinePurchaseFreq}
           onChange={(v) => set('onlinePurchaseFreq', v)}
         />
+
+        <label className="mb-2 flex cursor-pointer items-start gap-3 rounded-2xl bg-card p-4">
+          <input
+            type="checkbox"
+            checked={replayConsent}
+            onChange={(event) => setReplayConsent(event.target.checked)}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+          />
+          <span className="text-[13px] leading-relaxed text-muted">
+            I consent to privacy-masked session replay for this research study. My name entry and
+            activity outside this website will not be included in the replay.
+          </span>
+        </label>
 
         <ActionBar>
           <PrimaryButton type="submit" disabled={!complete}>

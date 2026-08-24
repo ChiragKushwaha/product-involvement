@@ -40,9 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# survey response data (local capture)
-/data/
-
 # Ad videos are large binaries; keep them out of git and deploy them alongside
 # (or track with Git LFS). Remove this line if you want them committed.
 # /public/ads/*.mp4
